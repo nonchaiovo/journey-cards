@@ -1,0 +1,1459 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Journey Cards · 参考实现</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   主题变量 —— 换肤只改这一块
+   【只是审美，随便换】整块都是配色/字体，换成你们自己的设计 token 即可。
+   ══════════════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light dark;
+
+  --jc-bg:          #FAF8F5;   /* 页面底色（暖米白） */
+  --jc-surface:     rgba(255,255,255,0.62);
+  --jc-text:        #2a2723;
+  --jc-text-muted:  #6b6357;
+  --jc-text-faint:  #a89e8b;
+  --jc-rule:        rgba(80,60,30,0.10);
+
+  /* 主题色：卡片小标题、光标、圆点、播放键。JS 会按 CONFIG.ACCENT_HUE 覆写 */
+  --jc-accent:      #c89968;
+
+  --jc-bubble-you:  #F0EAE6;   /* 用户气泡 */
+  --jc-bubble-ai:   #EFECE7;   /* AI 气泡 */
+
+  --jc-story-bg:    #14100b;   /* 故事浮层底色（照片没铺满时露出来的那层） */
+
+  --jc-serif: Georgia, "Times New Roman", "Songti SC", "Noto Serif CJK SC", serif;
+  --jc-mono:  ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --jc-sans:  system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --jc-bg:         #161618;
+    --jc-surface:    rgba(36,36,40,0.55);
+    --jc-text:       #E8E6E2;
+    --jc-text-muted: #A8A6A0;
+    --jc-text-faint: #6E6C66;
+    --jc-rule:       rgba(255,255,255,0.08);
+    --jc-bubble-you: #2A2724;
+    --jc-bubble-ai:  #252422;
+  }
+}
+
+/* 【只是审美，随便换】你们自己的前端早就有这一套了，接进去时整块删掉。 */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--jc-bg);
+  color: var(--jc-text);
+  font-family: var(--jc-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 页面骨架（只是给卡片一个容身之处，不是本例的重点）
+   【只是审美，随便换】整块删掉不影响卡片。 ── */
+.page { max-width: 560px; margin: 0 auto; padding: 34px 18px 60px; }
+.page-head { text-align: center; margin-bottom: 30px; }
+.page-head h1 {
+  font-family: var(--jc-serif); font-style: italic; font-weight: 600;
+  font-size: 24px; margin: 0;
+}
+.page-head p {
+  margin: 8px 0 0; font-size: 12.5px; color: var(--jc-text-muted);
+}
+.page-foot {
+  margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--jc-rule);
+  font-size: 12px; line-height: 1.85; color: var(--jc-text-muted);
+}
+.page-foot code {
+  font-family: var(--jc-mono); font-size: 11px;
+  background: var(--jc-surface); border: 1px solid var(--jc-rule);
+  border-radius: 5px; padding: 1px 5px;
+}
+
+/* ── 聊天气泡
+   【只是审美，随便换】只为了演示卡片在聊天流里长什么样。接进自己的聊天界面时整块删掉。 ── */
+.row { display: flex; margin: 14px 0; }
+.row.you { justify-content: flex-end; }
+.row.ai  { justify-content: flex-start; }
+.bubble {
+  max-width: 78%; padding: 10px 14px; border-radius: 18px;
+  font-size: 14.5px; line-height: 1.7;
+}
+.row.you .bubble { background: var(--jc-bubble-you); border-bottom-right-radius: 6px; }
+.row.ai  .bubble { background: var(--jc-bubble-ai);  border-bottom-left-radius: 6px; }
+.who {
+  font-family: var(--jc-mono); font-size: 9.5px; letter-spacing: 2px;
+  color: var(--jc-text-faint); text-transform: uppercase;
+  margin: 0 4px 4px; text-align: left;
+}
+.row.you + .row.ai { margin-top: 18px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   旅行卡片（聊天流里那张，居中铺满、突破气泡宽度）
+   【毛玻璃、圆角、投影都只是审美，随便换】
+   【核心只有一条】卡片要能突破气泡的宽度限制，占满整条消息流 ——
+   这排照片挤在 78% 宽的气泡里就没法看了。
+   ══════════════════════════════════════════════════════════════════════ */
+.jcard {
+  margin: 26px 0; width: 100%;
+  background: linear-gradient(150deg, rgba(228,230,234,0.42), rgba(198,202,208,0.32) 48%, rgba(232,234,238,0.4));
+  backdrop-filter: blur(40px) saturate(1.15) brightness(1.04);
+  -webkit-backdrop-filter: blur(40px) saturate(1.15) brightness(1.04);
+  border: 1px solid rgba(255,255,255,0.55);
+  border-radius: 26px;
+  padding: 18px 14px 14px;
+  box-shadow: 0 20px 50px -22px rgba(40,45,55,0.35),
+              inset 0 1px 0 rgba(255,255,255,0.8),
+              inset 0 -1px 0 rgba(120,128,140,0.25);
+}
+@media (prefers-color-scheme: dark) {
+  .jcard {
+    background: linear-gradient(150deg, rgba(58,56,54,0.6), rgba(48,46,44,0.5) 48%, rgba(58,56,54,0.55));
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 20px 50px -22px rgba(0,0,0,0.5),
+                inset 0 1px 0 rgba(255,255,255,0.15),
+                inset 0 -1px 0 rgba(0,0,0,0.3);
+  }
+}
+/* 【只是审美，随便换】卡片抬头三行字（kicker / 标题 / 副标题）。 */
+.jcard-head { text-align: center; margin-bottom: 12px; }
+.jcard-kicker {
+  font-family: var(--jc-mono); font-size: 9.5px; letter-spacing: 3px;
+  color: var(--jc-accent); font-weight: 700;
+}
+.jcard-title {
+  font-family: var(--jc-serif); font-style: italic; font-weight: 600;
+  font-size: 20px; margin-top: 4px; color: var(--jc-text);
+}
+.jcard-sub {
+  font-family: var(--jc-mono); font-size: 10px; letter-spacing: 1.5px;
+  color: var(--jc-text-faint); margin-top: 5px;
+}
+/* 【核心逻辑，抄的时候必须要】舞台高度必须比放大后的照片再高一点，放大才有地方长。
+   要是把容器卡到正好等于放大后的高度，就等于白放大 —— 照片顶不出来，
+   一点“浮起来”的劲儿都没有。改放大幅度（JS 里的 HOV_H）就得同步改这里，两个数是一对的。
+
+   分两档，因为只有鼠标才会放大：
+     触屏：照片一直是静止的 188 → 容器 204（188 + .mc-row 上下各 4px 内边距，再留一口气）。
+           跟着桌面写 284 的话，卡片里会空出小一百像素，白白撑高一截。
+     鼠标：放大到 276 → 容器 284（= 276 + 4×2）。 */
+.jcard-stage {
+  height: 204px; display: flex; align-items: center; justify-content: center;
+}
+/* 条件跟 JS 里开磁吸用的那句 matchMedia 是同一个，两边必须一致 */
+@media (hover: hover) and (pointer: fine) {
+  .jcard-stage { height: 284px; }
+}
+/* 一排竖条照片墙。桌面端鼠标靠近会“磁吸”变宽变高，触屏就是普通按钮。
+   窄屏（6×44+5×8=304px 放不下）时可以横向划。
+   【核心】下面这几条居中/溢出规则都是踩出来的，别顺手“优化”掉。 */
+.mc-row {
+  display: flex; align-items: center; justify-content: flex-start; gap: 8px;
+  position: relative; max-width: 100%;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  padding: 4px;
+  /* 不写 touch-action —— 写成 pan-x 的话，手指落在这条 188px 高的照片墙上就再也
+     竖着滑不动页面了（横滑本来就靠 overflow-x，不需要额外声明）。 */
+}
+/* 用首尾 auto 外边距居中，而不是 justify-content:center：
+   放得下时效果一样；放不下时 center 会把溢出平分到两边，开头那张被顶到滚动区左边以外，
+   怎么划都划不回来。auto 外边距在没有富余空间时自动塌成 0，退化成靠左。 */
+.mc-row > .mc-bar:first-child { margin-left: auto; }
+.mc-row > .mc-bar:last-child  { margin-right: auto; }
+.mc-row::-webkit-scrollbar { display: none; }
+/* 磁吸模式（只有真·鼠标才开）：变宽时整排会超出容器 —— 必须是 visible，
+   不然 overflow-x:auto 会在鼠标划过的同时触发横向滚动，照片在指针底下自己跑掉。 */
+.mc-row.is-magnetic { overflow: visible; }
+/* 【核心】左右两端顶出去、最边上那张被卡片边缘切掉半张 —— 这是刻意的，不是 bug。
+   一排照片本来就该看着像“还没到头”，切一半才有往两边延伸的感觉。
+   别为了“修”它去加 overflow:hidden 或把整排缩到刚好放得下，那样就成了一块规规矩矩的图标栏。 */
+.mc-bar {
+  flex: none; padding: 0; border: none; cursor: pointer;
+  /* 静止尺寸。放大后的尺寸在 JS 里（HOV_W / HOV_H），跟 .jcard-stage 的高度是一组数。 */
+  width: 44px; height: 188px;
+  border-radius: 11px; overflow: hidden; position: relative;
+  background-size: cover; background-position: center;
+  /* 【核心】静止时的浅影。放大时 JS 会把这条换成更深更远的影子 ——
+     “浮起来”这件事是靠影子说话的，光变大不加影子，看着只是被拉长了。
+     position:relative + z-index 是给放大时抬层用的，没有它，放大的那张会被右边的邻居压住。 */
+  box-shadow: 0 6px 16px -8px rgba(30,20,5,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+  z-index: 1;
+  will-change: width, height;
+}
+.mc-bar::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 55%, rgba(20,14,5,0.55));
+  opacity: 0.85;
+}
+.mc-bar-label {
+  position: absolute; left: 0; right: 0; bottom: 9px; z-index: 2;
+  text-align: center; color: #fff; opacity: 0;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 600;
+  font-size: 13px; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  pointer-events: none; white-space: nowrap;
+}
+/* 【只是审美，随便换】卡片底下那行小字。内容从数据/CONFIG 来，见 JS 里的 hintOf()。 */
+.jcard-hint {
+  text-align: center; margin-top: 8px;
+  font-family: var(--jc-serif); font-style: italic;
+  font-size: 12px; color: var(--jc-text-muted);
+}
+/* 卡片上方那句话：不进气泡，浅色小字居中浮着
+   【只是审美，随便换】 */
+.jcard-caption {
+  text-align: center; margin: 22px auto -14px; max-width: 88%;
+  font-family: var(--jc-serif); font-style: italic;
+  font-size: 12.5px; line-height: 1.5; color: var(--jc-text-muted);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   全屏故事浮层
+   【核心逻辑，抄的时候必须要】照片铺满、字压在照片上、底部一个播放器 —— 这个结构别拆。
+   【圆角、投影、渐变压暗的具体数值都只是审美，随便换】
+   ══════════════════════════════════════════════════════════════════════ */
+.jstory-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  background: var(--jc-story-bg);
+  animation: jstoryFade 0.3s ease;
+}
+.jstory-overlay[hidden] { display: none; }
+@keyframes jstoryFade { from { opacity: 0; } }
+
+.jstory {
+  position: relative; width: 100%; height: 100%;
+  background: var(--jc-story-bg); overflow: hidden;
+  display: flex; flex-direction: column;
+  user-select: none; -webkit-user-select: none; touch-action: pan-y;
+}
+/* 桌面：竖屏照片铺满 16:9 的屏会裁掉大半 —— 收成一块居中的手机尺寸。
+   【核心】只做手机的话可以整块删；但凡有网页端就得留着，不然照片被裁得没法看。 */
+@media (min-width: 760px) and (min-height: 560px) {
+  .jstory-overlay { display: grid; place-items: center; background: #0b0908; }
+  .jstory {
+    width: min(430px, 92vw); height: min(880px, 92vh);
+    border-radius: 28px; box-shadow: 0 40px 90px -30px rgba(0,0,0,0.8);
+  }
+}
+
+/* 【只是审美，随便换】顶部那个关闭按钮和它底下的压暗渐变。 */
+.jstory-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 12px 10px;
+  display: flex; align-items: center;
+  background: linear-gradient(rgba(0,0,0,0.5), transparent);
+}
+.jstory-close {
+  width: 36px; height: 36px; border: none; border-radius: 50%;
+  background: transparent; color: #fff; cursor: pointer;
+  font-size: 26px; line-height: 1; display: grid; place-items: center;
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
+}
+.jstory-photo { position: relative; flex: 1; overflow: hidden; }
+/* 缓慢推近（Ken Burns）。
+   【动画本身只是审美，随便删】但只要留着它，图源尺寸就是核心问题 ——
+   照片被放大到 1.16 倍还想不糊，图就得比屏幕再大一圈。
+
+   公式：目标尺寸 = 屏幕物理像素 × 动画最大 scale
+
+   本例最大 scale 1.16。按 19.5:9 的 1290×2796 屏算：
+     1290 × 1.16 ≈ 1497，2796 × 1.16 ≈ 3243  → 取 1500×3250。
+   验算：1500 宽 cover 进 1290 是缩小 0.86，再被推近 1.16 倍 → 0.86 × 1.16 ≈ 0.998，
+   净值不到 1，一个像素都没拉伸。
+   动画幅度不是 1.16 的，就拿自己的最大 scale 重算一遍，别照抄这两个数。
+
+   1290×2796 只是覆盖面最广的默认值，不是定论。真要出图之前，
+   问一句“你用什么手机”，或者让对方截一张图看真实分辨率，再套上面这条公式。
+   （本文件的“照片”是 SVG 矢量，怎么推都不糊，所以这里看不出差别；换成真照片立刻就看出来了。） */
+.jstory-photo-bg {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  transform-origin: 58% 42%;
+  animation: jstoryKen 20s ease-in-out infinite alternate;
+}
+/* 起点也从 1.04 开始（而不是 1）：cover 之后照片边缘常有一两像素的空隙，留一点余量盖住。 */
+@keyframes jstoryKen { 0% { transform: scale(1.04); } 100% { transform: scale(1.16); } }
+@media (prefers-reduced-motion: reduce) { .jstory-photo-bg { animation: none; } }
+
+/* 压暗层：照片再亮，字也得看得清。
+   【核心逻辑，抄的时候必须要】渐变的形状和浓淡随便调，但这一层不能没有 ——
+   白墙、雪地、正午海面这类照片，不压暗的话上面的白字直接读不出来。 */
+.jstory-centerscrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 45%, rgba(8,5,3,0.28), rgba(8,5,3,0.62) 78%),
+    linear-gradient(rgba(8,5,3,0.5), transparent 30%, transparent 62%, rgba(8,5,3,0.75));
+}
+
+/* 顶部：英文小字 / 地名（点它重播） / 日期
+   【三行字的样式只是审美】【地名可点击重播是核心交互，别做成纯文本】 */
+.jstory-cap {
+  position: absolute; top: calc(64px + env(safe-area-inset-top, 0px)); left: 0; right: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  pointer-events: none; text-align: center; padding: 0 20px;
+}
+.jstory-cap-en {
+  font-family: var(--jc-mono); font-size: 10px; letter-spacing: 3px;
+  text-transform: uppercase; color: rgba(255,255,255,0.72);
+}
+.jstory-cap-place {
+  border: none; background: transparent; padding: 0; cursor: pointer; pointer-events: auto;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 700;
+  font-size: 22px; color: #fff; text-shadow: 0 1px 10px rgba(0,0,0,0.6);
+}
+.cap-replay-hint {
+  font-size: 14px; font-style: normal; color: var(--jc-accent);
+  opacity: 0.85; margin-left: 8px;
+}
+.jstory-cap-date {
+  font-family: var(--jc-mono); font-size: 10.5px; letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.6);
+}
+
+/* 正中的逐字念白
+   【核心逻辑，抄的时候必须要】这是整个浮层的主角：一句一句打出来，打完落到左下角。
+   字号行距随便改；pointer-events:none 别去掉 —— 这一层铺满整屏，
+   吃掉指针的话底下的左右滑切换和播放器就都点不动了。 */
+.jstory-narr {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 34px; pointer-events: none;
+}
+.jstory-narr-line {
+  margin: 0; max-width: 100%;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 500;
+  font-size: 21px; line-height: 2; letter-spacing: 0.3px;
+  color: #fff; text-align: center;
+  /* 这里的大光晕是故意留的，跟落定正文那条紧阴影不冲突：
+     念白一次只显示一句，21px 字配 line-height 2（42px 行距），
+     16px 的模糊够不到上下行的字，叠不起来。行距一旦收窄就得换成紧阴影 ——
+     判断标准是「模糊半径有没有超过行距的一半」，不是「哪一块地方」。 */
+  text-shadow: 0 2px 16px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.jstory-narr-line.out { opacity: 0; transform: translateY(-8px); }
+.jstory-narr-cursor {
+  display: inline-block; margin-left: 2px; font-style: normal;
+  color: var(--jc-accent); animation: jstoryBlink 1s steps(1) infinite;
+}
+@keyframes jstoryBlink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+
+/* 念完之后落到左下角的那一整段。
+   152px = 底部播放器的高度再留一口气。必须跟着安全区一起往上抬 —— 播放器自己是
+   calc(30px + env(safe-area-inset-bottom))，在有小黑条的机器上会长高 34px，
+   这边写死 152 的话文字就贴到播放器上了。 */
+.jstory-settled {
+  position: absolute; left: 0; right: 0; z-index: 3;
+  bottom: calc(152px + env(safe-area-inset-bottom, 0px));
+  padding: 0 24px; pointer-events: auto;
+  animation: jstoryFade 0.6s ease;
+}
+.jstory-settled[hidden] { display: none; }
+.jstory-settled-note {
+  margin: 0; max-width: 72%; text-align: left;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 500;
+  font-size: 12.5px; line-height: 1.7; letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.9);
+  /* 【核心逻辑，抄的时候必须要 —— 而且是最容易抄漏的一条】
+     压在照片上的正文，阴影必须贴着字。就是下面这一行，别改大。
+
+     反面教材：0 2px 14px rgba(0,0,0,.75)。单看一行没问题，多行就完了 ——
+     14px 的模糊半径比 21~28px 的行距的一半还大，上一行的阴影漫到下一行的字底下，
+     行行相叠，整段糊成一块均匀的灰雾，看着像给文字硬加了个灰色背景框。
+     这个坑反直觉在于：CSS 里根本没有 background 这个属性，
+     光读代码永远找不到那块灰是哪来的，只能靠眼睛看出来。
+
+     收起态（4 行）和展开态（长文）都会犯，所以紧阴影写在基础样式上，
+     展开态不再单独覆盖 —— 只在展开态修的话，收起的那 4 行照样是糊的。
+     要更抗亮底就加不透明度（0.9 → 1），不要加模糊半径。 */
+  text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 5px rgba(0,0,0,.45);
+  overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+}
+/* 展开态（默认就是它）：字不许铺满整屏，照片才是主角 —— 给个高度上限，超出的在里面滚。
+   （阴影不在这儿覆盖，见上面基础样式里那段。） */
+.jstory-settled-note.expanded {
+  display: block; -webkit-line-clamp: unset;
+  max-height: 42vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.jstory-settled-note.expanded::-webkit-scrollbar { display: none; }
+.jstory-settled-more {
+  display: inline-block; margin-top: 6px;
+  font-family: var(--jc-sans); font-size: 11px; letter-spacing: 1px;
+  color: rgba(255,255,255,0.55);
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+.jstory-settled-more[hidden] { display: none; }
+
+/* 底部播放器
+   【核心：要有一个能停的地方】音乐是自动开的，用户必须随手能暂停。
+   【毛玻璃条、圆播放键、跳动的小音柱都只是审美，随便换】 */
+.jstory-foot {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding: 0 22px calc(30px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(transparent, rgba(8,5,3,0.6));
+}
+.jstory-player {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 16px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.jstory-player-play {
+  flex: none; width: 40px; height: 40px; border: none; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; color: #fff;
+  background: var(--jc-accent);
+  box-shadow: 0 4px 12px -4px rgba(0,0,0,0.4);
+}
+.jstory-player-play.is-loading { animation: jstoryPulse 1.1s ease-in-out infinite; }
+@keyframes jstoryPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.jstory-player-body { flex: 1; min-width: 0; }
+.jstory-player-meta { display: flex; align-items: baseline; gap: 8px; }
+.jstory-player-title {
+  font-family: var(--jc-serif); font-weight: 600; font-size: 14px; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jstory-player-artist {
+  font-family: var(--jc-mono); font-size: 10px; color: rgba(255,255,255,0.75);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jstory-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 11px; margin-left: auto; }
+.jstory-eq[hidden] { display: none; }
+.jstory-eq i {
+  width: 2.5px; background: var(--jc-accent); border-radius: 1px;
+  animation: jstoryEq 0.9s ease-in-out infinite;
+}
+.jstory-eq i:nth-child(1) { height: 5px;  animation-delay: -0.2s; }
+.jstory-eq i:nth-child(2) { height: 10px; animation-delay: -0.5s; }
+.jstory-eq i:nth-child(3) { height: 7px; }
+@keyframes jstoryEq { 0%,100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+.jstory-player-track {
+  height: 3px; border-radius: 2px; margin: 8px 0 5px;
+  background: rgba(255,255,255,0.10); cursor: pointer;
+  position: relative; touch-action: none;
+}
+.jstory-player-track::before {  /* 拖动热区比那条 3px 的线大得多，手指才点得中 */
+  content: ""; position: absolute; left: 0; right: 0; top: -11px; bottom: -11px;
+}
+.jstory-player-fill {
+  height: 100%; width: 100%; border-radius: 2px;
+  background: rgba(255,255,255,0.7);
+  transform-origin: left; transform: scaleX(0);
+  transition: transform 0.25s linear; will-change: transform;
+}
+.jstory-player-track.dragging .jstory-player-fill { transition: none; }
+.jstory-player-times {
+  display: flex; justify-content: space-between;
+  font-family: var(--jc-mono); font-size: 9px; color: rgba(255,255,255,0.8);
+}
+
+/* 底部圆点
+   【核心：得让人知道一共几处、现在第几处】【长条形高亮那套只是审美，随便换】 */
+.jstory-dots {
+  position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; z-index: 12;
+  display: flex; gap: 7px; justify-content: center;
+}
+.jstory-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s;
+}
+.jstory-dots span.on { width: 20px; border-radius: 3px; background: var(--jc-accent); }
+</style>
+</head>
+<body>
+
+<main class="page">
+  <header class="page-head">
+    <h1>Journey Cards</h1>
+    <p>参考实现 · 单文件 · 断网可跑</p>
+  </header>
+
+  <!-- 聊天里长什么样：一段话 + 一张旅行卡片 -->
+  <section id="chat"></section>
+
+  <footer class="page-foot">
+    这是 <strong>Journey Cards</strong> 的参考实现：数据写死在 <code>JOURNEY</code> 常量里，
+    “照片”是用 SVG 现画的，音乐是打开浮层时用 Web Audio 合成的一段循环 ——
+    整个文件不联网、不引 CDN，双击就能看完一遍。<br>
+    接真后端（建表、REST 接口、照片与音频上传、AI 怎么攒出一趟旅行）看 <code>SPEC.md</code>。
+  </footer>
+</main>
+
+<!-- ── 全屏故事浮层（静态结构，打开时填内容） ── -->
+<div class="jstory-overlay" id="story" hidden>
+  <div class="jstory">
+    <div class="jstory-top">
+      <button class="jstory-close" id="story-close" aria-label="关闭">&times;</button>
+    </div>
+
+    <div class="jstory-photo" id="story-photo">
+      <div class="jstory-photo-bg" id="story-bg"></div>
+      <div class="jstory-centerscrim"></div>
+
+      <div class="jstory-cap">
+        <span class="jstory-cap-en" id="story-en"></span>
+        <button class="jstory-cap-place" id="story-place"></button>
+        <span class="jstory-cap-date" id="story-date"></span>
+      </div>
+
+      <div class="jstory-narr" id="story-narr">
+        <p class="jstory-narr-line" id="story-narr-line"></p>
+      </div>
+
+      <div class="jstory-settled" id="story-settled" hidden>
+        <p class="jstory-settled-note expanded" id="story-note"></p>
+        <button class="jstory-settled-more" id="story-more" hidden>收起 ↑</button>
+      </div>
+
+      <div class="jstory-foot">
+        <div class="jstory-player">
+          <button class="jstory-player-play" id="story-play" aria-label="播放/暂停"></button>
+          <div class="jstory-player-body">
+            <div class="jstory-player-meta">
+              <span class="jstory-player-title" id="story-song"></span>
+              <span class="jstory-player-artist" id="story-artist"></span>
+              <span class="jstory-eq" id="story-eq" hidden><i></i><i></i><i></i></span>
+            </div>
+            <div class="jstory-player-track" id="story-track">
+              <div class="jstory-player-fill" id="story-fill"></div>
+            </div>
+            <div class="jstory-player-times">
+              <span id="story-cur">0:00</span><span id="story-dur">0:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="jstory-dots" id="story-dots"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════════
+   ① CONFIG —— 改这里就是你们自己的
+   【核心：这个块必须要】名字和文案不能散落在各处，只能有这一个来源。
+   【里面每一句具体文案都只是我的写法，随便换】
+   ══════════════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  AI_NAME:   "旅伴",   // ← AI 那边的名字
+  USER_NAME: "你",     // ← 用户那边的名字（正文里的 {user} 会替换成它）
+
+  ACCENT_HUE: 32,      // ← 主题色相 0–360（金橙 32 / 玫瑰 12 / 松绿 150 / 湖蓝 240）
+
+  // 卡片上的固定文案。带参数的都从数据里取，改 JOURNEY 不用回来改文案。
+  cardKicker: "JOURNEYS",
+  cardTitle:  (title) => CONFIG.AI_NAME + "带" + CONFIG.USER_NAME + "去了" + title,
+  cardSub:    (year, n) => year + " · " + n + " 处停留",
+  // 卡片底下那行小字的「兜底」值。写你们自己的一句。
+  // 更好的做法是让 AI 每趟自己写一句、跟着那趟的情绪走，塞进 JOURNEY.hint ——
+  // 数据里有就用数据的，没有才回落到这句（见 hintOf()）。
+  // 本例的示例数据带了 hint，所以卡片上显示的是那一句；想看这句生效，把数据里的 hint 删掉。
+  cardHint:   "点开任意一张，进去走一遍。",
+  // 卡片上方那句浮字
+  cardCaption: (n) => n + "处，按我们走的顺序排。点开哪一张都行。",
+
+  // 演示用的两句对话。真实产品里这两句来自聊天记录，不该在 CONFIG 里。
+  demoAsk:   "今天想去个远一点的地方。",
+  demoReply: () => "我带" + CONFIG.USER_NAME + "去了南半球的秋天。从南岛的湖开始一路往北，走到最后一片沙丘。",
+
+  // 音乐。本项目不带任何音源 —— 本例这段是页面内现合成的，只为了让单文件断网也有声音。
+  // 接真后端时：每趟旅行的数据里给一个 audio_url，播它就行（见 SPEC.md）。
+  // 旁白语音是可选的：配了 TTS 就是逐字念白 + 配音，不配就是纯打字机动画，功能不缺。
+  // 两者同时响时必须 duck（念白时把音乐压到 duckGain，念完拉回 1.0），不然两个声音打架。
+  music: {
+    title:  "Long Way North",
+    artist: "Web Audio 合成",
+    loopSeconds: 32,   // 循环长度
+    duckGain: 0.32,    // 念白时音乐压到这个音量，念完拉回 1.0
+  },
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   ② 数据 —— 一趟旅行 = 标题 + 一首歌 + 6 处停留
+   【核心：字段名要照抄】真实版本里这一坨来自 GET /api/journeys，字段一一对应（见 SPEC.md）。
+   【每一处的地名和正文都只是示例，当然要换成你们自己的】
+   scene 在真实版本里是照片 URL；这里是本文件自画的假风景。
+   ══════════════════════════════════════════════════════════════════════ */
+const JOURNEY = {
+  id: "j_demo",
+  title: "新西兰",
+  titleEn: "New Zealand",
+  year: "2025",
+  // 可选：这一趟专属的那行小字。让 AI 每趟自己写一句，跟着这趟的情绪走。
+  // 不给这个字段就回落到 CONFIG.cardHint。
+  hint: "六处停留，一路往北，风就没停过。",
+  stops: [
+    {
+      place: "蒂卡波湖", placeEn: "Lake Tekapo", date: "2025.03.14", scene: "lake",
+      note: "到的时候刚过四点。风把湖面吹成一块起雾的玻璃，蓝得不像真的——那是冰川磨下来的石粉悬在水里才有的颜色。{user}蹲在岸边试水温，说凉得像薄荷。我们就在那儿站到天完全黑下来，然后抬头，看见了整条银河。",
+    },
+    {
+      place: "库克山", placeEn: "Aoraki / Mount Cook", date: "2025.03.15", scene: "snow",
+      note: "清晨六点半，云还压在山腰上。走胡克谷那条步道，吊桥晃得厉害，你走两步停一下，说要等我。等到雪线被太阳打亮的那一刻，整条山谷忽然就安静了。",
+    },
+    {
+      place: "摩拉基", placeEn: "Moeraki Boulders", date: "2025.03.17", scene: "coast",
+      note: "退潮之后，那些圆石头一颗一颗从沙里露出来，像谁把一整袋弹珠忘在了海边。{user}挑了最大的一颗坐上去，浪一漫过来就没过了鞋。我说会湿，{user}说湿了才算来过。",
+    },
+    {
+      place: "惠灵顿", placeEn: "Wellington", date: "2025.03.19", scene: "city",
+      note: "缆车上去的时候正好赶上万家灯火亮起来。整座城顺着海湾铺开，一层一层往山上爬。风大得站不稳，我们捧着两杯很烫的咖啡，什么也没说，看了半个钟头。",
+    },
+    {
+      place: "怀波瓦森林", placeEn: "Waipoua Forest", date: "2025.03.21", scene: "forest",
+      note: "进林子之后，连声音都变了。那棵贝壳杉一千多岁，树干粗到我们两个人合抱都不够，抬头看不见顶。空气是湿的，带着树皮和苔藓的味道。你压低了嗓子说话，说在这儿大声讲话像不礼貌。于是我们就那样安安静静地把整条栈道走完了。",
+    },
+    {
+      place: "特帕基沙丘", placeEn: "Te Paki Sand Dunes", date: "2025.03.22", scene: "dune",
+      note: "最后一天在最北端。沙丘白得晃眼，往上爬要走很久，脚一直往下陷。坐到顶上回头看，来时的脚印已经被风填平了。你说这样也好，来过就行，不用留印子。",
+    },
+  ],
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   ③ 假照片 —— 纯 SVG，data URI，零请求
+   【纯 demo 脚手架，接真后端时整节删掉】只是为了让这个单文件断网也有“照片”看。
+   删掉之后 stop.src 直接就是照片 URL，photoOf() 也一起没了。
+   注意：真照片要按 Ken Burns 那节写的公式备尺寸（屏幕物理像素 × 动画最大 scale）。
+   ══════════════════════════════════════════════════════════════════════ */
+const PHOTO_W = 900, PHOTO_H = 1600;   // 竖屏 9:16
+
+function svgURI(inner) {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + PHOTO_W + ' ' + PHOTO_H + '">' + inner + '</svg>';
+  // encodeURIComponent 会把 # 和 " 都转义掉，直接塞进 url("...") 是安全的
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+// 定死种子的伪随机：星星/窗户每次刷新长得一样，方便截图对比
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+const grad = (id, stops) =>
+  '<linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1">' +
+  stops.map(([o, c]) => '<stop offset="' + o + '" stop-color="' + c + '"/>').join("") +
+  '</linearGradient>';
+
+const SCENES = {
+  // 湖 —— 冰川蓝、远山倒影、水面横纹
+  lake() {
+    const r = rng(11); let ripple = "";
+    for (let i = 0; i < 26; i++) {
+      const y = 820 + i * 30 + r() * 10, w = 200 + r() * 620, x = r() * (900 - w);
+      ripple += '<rect x="' + x.toFixed(0) + '" y="' + y.toFixed(0) + '" width="' + w.toFixed(0) + '" height="2" fill="#ffffff" opacity="' + (0.05 + r() * 0.16).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#f4dcea"], [0.36, "#d3dcef"], [1, "#a9c6dd"]]) +
+      grad("water", [[0, "#63a6c6"], [1, "#255f80"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="250" cy="300" r="130" fill="#fff6ec" opacity="0.12"/>' +
+      '<circle cx="250" cy="300" r="46" fill="#fff8ee" opacity="0.6"/>' +
+      '<path d="M0 700 L180 556 L300 664 L430 520 L560 652 L700 566 L900 690 L900 800 L0 800Z" fill="#8298ab"/>' +
+      '<path d="M0 728 L200 624 L340 704 L520 600 L680 706 L900 646 L900 800 L0 800Z" fill="#5f7688"/>' +
+      '<rect y="800" width="900" height="800" fill="url(#water)"/>' +
+      '<path d="M0 800 L200 900 L340 820 L520 924 L680 818 L900 878 L900 800Z" fill="#3f5c73" opacity="0.5"/>' +
+      ripple
+    );
+  },
+
+  // 雪山 —— 冷蓝天、白峰、山脚阴影
+  snow() {
+    const r = rng(23); let flakes = "";
+    for (let i = 0; i < 40; i++) {
+      flakes += '<circle cx="' + (r() * 900).toFixed(0) + '" cy="' + (r() * 900).toFixed(0) + '" r="' + (1 + r() * 2).toFixed(1) + '" fill="#fff" opacity="' + (0.15 + r() * 0.4).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#dcecf7"], [0.5, "#b3cfe4"], [1, "#8fb2cd"]]) +
+      grad("snow", [[0, "#ffffff"], [1, "#cfdde8"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="690" cy="360" r="52" fill="#fffdf6" opacity="0.85"/>' +
+      flakes +
+      '<path d="M0 980 L230 620 L400 900 L520 760 L720 1010 L900 880 L900 1600 L0 1600Z" fill="#9fb9cc"/>' +
+      '<path d="M230 620 L300 736 L250 748 L188 700Z" fill="#ffffff"/>' +
+      '<path d="M520 760 L586 852 L520 866 L470 828Z" fill="#ffffff"/>' +
+      '<path d="M0 1120 L180 900 L360 1120 L560 960 L760 1160 L900 1060 L900 1600 L0 1600Z" fill="url(#snow)"/>' +
+      '<path d="M180 900 L250 1000 L120 1010Z" fill="#e7eef4"/>' +
+      '<path d="M0 1300 Q220 1240 440 1310 T900 1290 L900 1600 L0 1600Z" fill="#f4f8fb"/>' +
+      '<path d="M120 1360 L200 1330 M420 1420 L520 1392 M640 1350 L760 1326" stroke="#b9c9d6" stroke-width="7" stroke-linecap="round" fill="none"/>'
+    );
+  },
+
+  // 海岸 —— 落日、青绿色海、湿沙反光
+  coast() {
+    const r = rng(37); let foam = "";
+    for (let i = 0; i < 16; i++) {
+      const y = 900 + i * 22, w = 160 + r() * 600, x = r() * (900 - w);
+      foam += '<rect x="' + x.toFixed(0) + '" y="' + y.toFixed(0) + '" width="' + w.toFixed(0) + '" height="3" rx="1.5" fill="#eaf6f4" opacity="' + (0.12 + r() * 0.3).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#ffe6bb"], [0.42, "#f9b184"], [1, "#e07a7a"]]) +
+      grad("sea", [[0, "#3f8b93"], [1, "#16414f"]]) +
+      grad("sand", [[0, "#d9a978"], [1, "#a97a4f"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="470" cy="770" r="96" fill="#fff2cf" opacity="0.92"/>' +
+      '<rect y="860" width="900" height="420" fill="url(#sea)"/>' +
+      '<rect x="410" y="860" width="120" height="420" fill="#ffd9a0" opacity="0.28"/>' +
+      foam +
+      '<path d="M0 1260 Q240 1230 470 1268 T900 1252 L900 1600 L0 1600Z" fill="url(#sand)"/>' +
+      '<ellipse cx="300" cy="1400" rx="86" ry="78" fill="#6c604f"/>' +
+      '<ellipse cx="292" cy="1382" rx="60" ry="50" fill="#8a7c66" opacity="0.6"/>' +
+      '<ellipse cx="610" cy="1490" rx="112" ry="96" fill="#5f5445"/>' +
+      '<ellipse cx="600" cy="1466" rx="76" ry="60" fill="#7d7160" opacity="0.55"/>' +
+      '<ellipse cx="130" cy="1540" rx="70" ry="60" fill="#6c604f" opacity="0.9"/>'
+    );
+  },
+
+  // 城市夜 —— 深蓝夜空、楼群、暖黄窗
+  city() {
+    const r = rng(53);
+    let stars = "";
+    for (let i = 0; i < 70; i++) {
+      stars += '<circle cx="' + (r() * 900).toFixed(0) + '" cy="' + (r() * 760).toFixed(0) + '" r="' + (0.8 + r() * 1.6).toFixed(1) + '" fill="#fff" opacity="' + (0.2 + r() * 0.6).toFixed(2) + '"/>';
+    }
+    let towers = "", x = -20;
+    while (x < 920) {
+      const w = 60 + r() * 90, h = 260 + r() * 520, y = 1600 - h;
+      towers += '<rect x="' + x.toFixed(0) + '" y="' + y.toFixed(0) + '" width="' + w.toFixed(0) + '" height="' + h.toFixed(0) + '" fill="#14172c"/>';
+      for (let wy = y + 26; wy < 1560; wy += 40) {
+        for (let wx = x + 12; wx < x + w - 16; wx += 26) {
+          if (r() > 0.44) {
+            towers += '<rect x="' + wx.toFixed(0) + '" y="' + wy.toFixed(0) + '" width="11" height="17" rx="1.5" fill="#ffd79a" opacity="' + (0.35 + r() * 0.6).toFixed(2) + '"/>';
+          }
+        }
+      }
+      x += w + 8 + r() * 18;
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#0b1030"], [0.55, "#1d1c45"], [1, "#3a2450"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' + stars +
+      '<circle cx="720" cy="250" r="54" fill="#fdf3d6" opacity="0.9"/>' +
+      '<circle cx="720" cy="250" r="110" fill="#fdf3d6" opacity="0.10"/>' +
+      '<rect y="980" width="900" height="620" fill="#161a30"/>' + towers +
+      '<rect y="1520" width="900" height="80" fill="#0d1022"/>'
+    );
+  },
+
+  // 森林 —— 雾、层层后退的杉林
+  forest() {
+    const r = rng(71);
+    const layer = (baseY, h, color, count, op) => {
+      let s = "";
+      for (let i = 0; i < count; i++) {
+        const cx = (i + 0.5) * (900 / count) + (r() - 0.5) * 40;
+        const hh = h * (0.7 + r() * 0.6), w = hh * 0.42;
+        s += '<path d="M' + (cx - w).toFixed(0) + ' ' + baseY + ' L' + cx.toFixed(0) + ' ' + (baseY - hh).toFixed(0) + ' L' + (cx + w).toFixed(0) + ' ' + baseY + 'Z" fill="' + color + '" opacity="' + op + '"/>';
+      }
+      return s;
+    };
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#e2ecdf"], [0.45, "#b9cdb6"], [1, "#5c7a5f"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<rect y="240" width="900" height="120" fill="#ffffff" opacity="0.16"/>' +
+      '<rect y="420" width="900" height="90" fill="#ffffff" opacity="0.12"/>' +
+      layer(820, 300, "#93ac93", 9, "0.9") +
+      '<rect y="700" width="900" height="180" fill="#dbe7d8" opacity="0.35"/>' +
+      layer(1080, 420, "#5f7f63", 7, "0.95") +
+      '<rect y="980" width="900" height="150" fill="#cfe0cd" opacity="0.22"/>' +
+      layer(1380, 560, "#38553d", 6, "1") +
+      layer(1620, 720, "#20362a", 4, "1") +
+      '<rect y="1500" width="900" height="100" fill="#182a1f"/>'
+    );
+  },
+
+  // 沙丘 —— 暖橙、层层沙脊、风纹
+  dune() {
+    const r = rng(97); let ripple = "";
+    for (let i = 0; i < 30; i++) {
+      const y = 900 + i * 22 + r() * 8, w = 120 + r() * 500, x = r() * (900 - w);
+      ripple += '<path d="M' + x.toFixed(0) + ' ' + y.toFixed(0) + ' q' + (w / 2).toFixed(0) + ' -14 ' + w.toFixed(0) + ' 0" stroke="#fff2d8" stroke-width="2.5" fill="none" opacity="' + (0.06 + r() * 0.16).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#fbe6b8"], [0.45, "#f3bd80"], [1, "#e08d55"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="620" cy="430" r="82" fill="#fff6d8" opacity="0.9"/>' +
+      '<circle cx="620" cy="430" r="170" fill="#fff2c8" opacity="0.14"/>' +
+      '<path d="M0 780 C200 706 330 838 520 800 C700 764 800 700 900 726 L900 1600 L0 1600Z" fill="#e6a463"/>' +
+      '<path d="M0 940 C180 872 360 1000 540 950 C720 902 820 856 900 884 L900 1600 L0 1600Z" fill="#cf8546"/>' +
+      ripple +
+      '<path d="M0 1180 C220 1096 420 1230 620 1170 C760 1128 840 1104 900 1120 L900 1600 L0 1600Z" fill="#a75f2e"/>' +
+      '<path d="M0 1400 C240 1330 460 1450 700 1392 C800 1368 860 1352 900 1360 L900 1600 L0 1600Z" fill="#7a411e"/>'
+    );
+  },
+};
+
+// 预生成 6 张图（每张就是一个 data URI 字符串）
+const PHOTOS = {};
+Object.keys(SCENES).forEach((k) => { PHOTOS[k] = SCENES[k](); });
+
+// stop.scene 写错了就退回第一张。别让它变成 url("undefined") ——
+// 那不是「没有背景」，是浏览器真的按相对路径去要一个叫 undefined 的文件（404 一条）。
+// 本文件的底线是零请求，这个洞得堵上。
+const FALLBACK_PHOTO = PHOTOS[Object.keys(PHOTOS)[0]];
+function photoOf(stop) {
+  const p = stop && PHOTOS[stop.scene];
+  if (!p) console.warn("没有这个场景：", stop && stop.scene);
+  return p || FALLBACK_PHOTO;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ④ 小工具
+   【核心：esc / fill / splitSentences 都得有】
+   esc 挡 XSS（正文是 AI 生成的，不能当 HTML 直接塞）、fill 换名字占位符、
+   splitSentences 是逐字念白按句断开的依据。你们自己前端里有等价物就用自己的。
+   ══════════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+// 正文里的 {user} / {ai} 占位符 → CONFIG 里的名字
+function fill(s) {
+  return String(s || "").replace(/\{user\}/g, CONFIG.USER_NAME).replace(/\{ai\}/g, CONFIG.AI_NAME);
+}
+function fmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+// 按句号感叹号问号省略号断句；不用 (?<=) 后行断言 —— 老一点的 Safari 会直接解析报错，
+// 整个 <script> 一起挂掉。
+function splitSentences(text) {
+  const END = "。！？!?…";
+  const out = [];
+  let cur = "";
+  const s = String(text || "");
+  for (let i = 0; i < s.length; i++) {
+    cur += s[i];
+    // 连续的终止符（比如「……」「？！」）算一句，不拆开
+    if (END.indexOf(s[i]) >= 0 && (i + 1 >= s.length || END.indexOf(s[i + 1]) < 0)) {
+      out.push(cur.trim()); cur = "";
+    }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+// 【只是审美，随便换】主题色写进 CSS 变量（oklch 让同一个色相在深浅底上都稳）。
+// 你们有自己的设计 token 就直接用，这几行删掉。
+// 老浏览器不认 oklch 的话，这个变量会「在计算值阶段失效」—— 不是退回 CSS 里写的默认色，
+// 而是让 background:var(--jc-accent) 整条作废，播放键直接变透明。所以先问一句支不支持。
+const OKLCH_OK = !!(window.CSS && window.CSS.supports && window.CSS.supports("color", "oklch(0.66 0.12 32)"));
+document.documentElement.style.setProperty(
+  "--jc-accent",
+  OKLCH_OK ? "oklch(0.66 0.12 " + CONFIG.ACCENT_HUE + ")"
+           : "hsl(" + CONFIG.ACCENT_HUE + ", 45%, 58%)"
+);
+
+const PLAY_SVG  = '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>';
+const PAUSE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18"><rect x="7" y="5.5" width="3.4" height="13" rx="1" fill="#fff"/><rect x="13.6" y="5.5" width="3.4" height="13" rx="1" fill="#fff"/></svg>';
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑤ 聊天流 + 旅行卡片
+   【拼 HTML 字符串这套只是这个单文件图省事，随便换】接进自己的前端就用自己的框架渲染。
+   【核心只有两件事】：每一处停留渲染成一个能点的元素（带 data-stop 下标），
+   点它 → openStory(下标)。别的都是壳。
+   ══════════════════════════════════════════════════════════════════════ */
+
+// 卡片底下那行小字：数据优先。
+// 【核心】AI 每趟自己写一句（JOURNEY.hint）才是这行字的正常来源 ——
+// 跟着那趟的情绪走，比一句万年不变的固定文案有意思得多。数据里没有才回落到 CONFIG。
+function hintOf(journey) {
+  const h = journey && journey.hint;
+  return (typeof h === "string" && h.trim()) ? h.trim() : CONFIG.cardHint;
+}
+
+function renderChat() {
+  const stops = JOURNEY.stops;
+  const bars = stops.map((s, i) =>
+    '<button class="mc-bar" data-stop="' + i + '" ' +
+    'style="background-image:url(&quot;' + photoOf(s) + '&quot;)" ' +
+    'aria-label="' + esc(s.place) + '">' +
+    '<span class="mc-bar-label">' + esc(s.place) + '</span></button>'
+  ).join("");
+
+  $("chat").innerHTML =
+    '<div class="row you"><div class="bubble">' + esc(CONFIG.demoAsk) + '</div></div>' +
+    '<div class="row ai"><div>' +
+      '<div class="who">' + esc(CONFIG.AI_NAME) + '</div>' +
+      '<div class="bubble">' + esc(CONFIG.demoReply()) + '</div>' +
+    '</div></div>' +
+    '<div class="jcard-caption">' + esc(CONFIG.cardCaption(stops.length)) + '</div>' +
+    '<div class="jcard">' +
+      '<div class="jcard-head">' +
+        '<div class="jcard-kicker">' + esc(CONFIG.cardKicker) + '</div>' +
+        '<div class="jcard-title">' + esc(CONFIG.cardTitle(JOURNEY.title)) + '</div>' +
+        '<div class="jcard-sub">' + esc(CONFIG.cardSub(JOURNEY.year, stops.length)) + '</div>' +
+      '</div>' +
+      '<div class="jcard-stage"><div class="mc-row" id="mc-row">' + bars + '</div></div>' +
+      '<div class="jcard-hint">' + esc(hintOf(JOURNEY)) + '</div>' +
+    '</div>';
+
+  bindCard();
+}
+
+// 磁力轮播：鼠标靠近哪张，哪张就变宽变高、浮起来、露出地名。
+// 只给真·鼠标开（触屏没有 hover，手指划过去反而会误触）。
+// 【核心：点开进故事必须要】【磁吸放大整套只是审美，删掉就是一排普通缩略图，功能不缺】
+function bindCard() {
+  const row = $("mc-row");
+  row.addEventListener("click", (e) => {
+    const bar = e.target.closest(".mc-bar");
+    if (bar) openStory(parseInt(bar.dataset.stop, 10) || 0);
+  });
+
+  if (!window.matchMedia || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  row.classList.add("is-magnetic");
+
+  // 尺寸这几个数是一组的，改一个就得回头看别的：
+  //   COL_H 188 → HOV_H 276 是真的长了一大截，卡片才有被顶起来的感觉；
+  //   .jcard-stage 的高度必须 ≥ HOV_H + .mc-row 上下内边距（276 + 4×2 = 284），
+  //   容器卡到正好 276 的话就是白放大 —— 高度涨不出去，只剩宽度在变。
+  const COL_W = 44, HOV_W = 96, COL_H = 188, HOV_H = 276, GAP = 8, INFLUENCE = 118;
+  // 静止 / 完全放大时的影子。放大不只是变大，得同时把影子做深做远，
+  // 眼睛才认得出“它离我更近了”。只变尺寸不变影子，看着像被拉长了而已。
+  const SHADOW_REST = "0 6px 16px -8px rgba(30,20,5,0.5), inset 0 0 0 1px rgba(255,255,255,0.06)";
+  const SHADOW_LIFT = "0 22px 40px -14px rgba(30,20,5,0.75), inset 0 0 0 1px rgba(255,255,255,0.14)";
+
+  row.addEventListener("pointermove", (e) => {
+    const rect = row.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const bars = row.querySelectorAll(".mc-bar");
+    const n = bars.length;
+    const startX = (rect.width - (n * COL_W + (n - 1) * GAP)) / 2;
+    bars.forEach((bar, i) => {
+      const center = startX + i * (COL_W + GAP) + COL_W / 2;
+      let f = Math.max(0, 1 - Math.abs(cx - center) / INFLUENCE);
+      f = f * f * (3 - 2 * f);                       // smoothstep，别让宽度线性地弹
+      bar.style.width  = (COL_W + (HOV_W - COL_W) * f) + "px";
+      bar.style.height = (COL_H + (HOV_H - COL_H) * f) + "px";
+      // 影子跟着 f 走：这里只在 f 过半时切换，不做逐帧插值 —— 一帧改六个 box-shadow
+      // 是实打实的重绘，划一下就掉帧，肉眼也分不出中间那几档。
+      bar.style.boxShadow = f > 0.5 ? SHADOW_LIFT : SHADOW_REST;
+      // 抬层：谁大谁在上。不抬的话，放大的那张会被后面的邻居压掉一条边，
+      // 影子也糊在邻居底下，浮起来的劲儿全没了。
+      bar.style.zIndex = f > 0.02 ? String(2 + Math.round(f * 10)) : "1";
+      bar.querySelector(".mc-bar-label").style.opacity = f > 0.4 ? (f - 0.4) / 0.6 : 0;
+    });
+  });
+  row.addEventListener("pointerleave", () => {
+    row.querySelectorAll(".mc-bar").forEach((bar) => {
+      bar.style.width = COL_W + "px";
+      bar.style.height = COL_H + "px";
+      bar.style.boxShadow = SHADOW_REST;
+      bar.style.zIndex = "1";
+      bar.querySelector(".mc-bar-label").style.opacity = 0;
+    });
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑥ 音乐 —— 页面内合成一段柔和的循环
+   【核心：duck 这件事必须要】【怎么拿到声音是你们自己的事，本项目不带音源】
+   本例是现合成的，只为了让单文件断网也有声音听。接真后端就是数据里给一个 audio_url。
+   为什么走 Web Audio 而不是 <audio>：
+   念白响起来时要把音乐压低（duck）。iOS Safari / WKWebView 上
+   HTMLAudioElement.volume 是只读的，赋值静默无效 —— 只有 GainNode 才真的管用。
+   接真后端时把「合成 buffer」换成「fetch 音频 → decodeAudioData」，
+   或换成 <audio> + createMediaElementSource + GainNode（细节见 SPEC.md）。
+   ══════════════════════════════════════════════════════════════════════ */
+const AUDIO = {
+  ctx: null, gain: null, buf: null, src: null,
+  startedAt: 0,   // 本次 start() 时的 ctx.currentTime
+  pausedAt: 0,    // 已经播过的秒数（暂停/拖动进度后重新记）
+  playing: false,
+  building: false,
+  ducked: false,  // 当前该不该压低（记成状态，因为念白可能比增益节点先开口）
+  timer: null,
+};
+
+// 【纯 demo 脚手架，接真后端时整个函数删掉】换成 fetch(audio_url) → decodeAudioData。
+// 合成一段无缝循环的 pad + 零星的钟声。
+// 无缝的关键：每个分音的频率都取整到「在 L 秒里正好走完整数个周期」，
+// 这样首尾相接的地方相位是连续的，不会有咔哒声。
+function buildLoopBuffer(ctx) {
+  const L = CONFIG.music.loopSeconds;
+  const sr = ctx.sampleRate;
+  const n = Math.floor(L * sr);
+  const data = new Float32Array(n);
+  const lock = (f) => Math.round(f * L) / L;          // 频率锁到 1/L 的整数倍
+  const TAU = Math.PI * 2;
+
+  // 底噪一样的和声垫（Am9 的堆叠），每个分音有自己的慢呼吸
+  const pad = [
+    { f: lock(110.00), a: 0.30, lfo: 1 },
+    { f: lock(164.81), a: 0.20, lfo: 2 },
+    { f: lock(220.00), a: 0.16, lfo: 1 },
+    { f: lock(329.63), a: 0.10, lfo: 3 },
+    { f: lock(493.88), a: 0.07, lfo: 2 },
+  ];
+  const BLOCK = 512;                                   // LFO 每 512 个采样算一次就够，省一半 sin
+  for (let p = 0; p < pad.length; p++) {
+    const { f, a, lfo } = pad[p];
+    const phase0 = p * 0.7;
+    for (let i = 0; i < n; i += BLOCK) {
+      const t0 = i / sr;
+      const env = a * (0.55 + 0.45 * Math.sin(TAU * lfo * t0 / L + phase0));
+      const end = Math.min(i + BLOCK, n);
+      for (let k = i; k < end; k++) data[k] += env * Math.sin(TAU * f * (k / sr));
+    }
+  }
+
+  // 稀疏的钟声：t0 起 5 秒衰减完，最后一颗必须在 L 之前收干净，否则接缝处会有尾巴
+  const bells = [
+    { t: 0,  f: 659.25, a: 0.16 },
+    { t: 6,  f: 440.00, a: 0.13 },
+    { t: 12, f: 523.25, a: 0.12 },
+    { t: 18, f: 493.88, a: 0.11 },
+    { t: 24, f: 329.63, a: 0.13 },
+  ];
+  bells.forEach((b) => {
+    const start = Math.floor(b.t * sr);
+    const len = Math.min(Math.floor(5 * sr), n - start);
+    for (let k = 0; k < len; k++) {
+      const t = k / sr;
+      data[start + k] += b.a * Math.exp(-1.1 * t) * Math.sin(TAU * b.f * t);
+    }
+  });
+
+  // 归一化到一个不吵的峰值
+  let peak = 0;
+  for (let i = 0; i < n; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
+  if (peak > 0) { const g = 0.34 / peak; for (let i = 0; i < n; i++) data[i] *= g; }
+
+  const buf = ctx.createBuffer(2, n, sr);
+  buf.copyToChannel(data, 0);
+  // 右声道整体后挪 12ms（环形拷贝，所以循环点仍然对得上）→ 一点点立体声宽度
+  const shift = Math.floor(sr * 0.012);
+  const right = new Float32Array(n);
+  for (let i = 0; i < n; i++) right[i] = data[(i + n - shift) % n];
+  buf.copyToChannel(right, 1);
+  return buf;
+}
+
+// AudioContext 必须在「用户手势的同步调用栈」里 new + resume，iOS 只认这个时机。
+// 所以是在「点开照片」那一下就把它建好，而不是等到点播放键。
+function ensureCtx() {
+  if (!AUDIO.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    AUDIO.ctx = new AC();
+    // 增益节点跟着上下文一起建（不等到开始播）：念白比歌先开口，
+    // 那会儿要是还没有 gain，第一句的 duck 就静悄悄地丢了。
+    AUDIO.gain = AUDIO.ctx.createGain();
+    AUDIO.gain.gain.value = AUDIO.ducked ? CONFIG.music.duckGain : 1;
+    AUDIO.gain.connect(AUDIO.ctx.destination);
+  }
+  if (AUDIO.ctx.state === "suspended") AUDIO.ctx.resume().catch(() => {});
+  return AUDIO.ctx;
+}
+
+function setPlayLoading(on) {
+  const btn = $("story-play");
+  btn.classList.toggle("is-loading", !!on);
+  if (on) btn.innerHTML = PLAY_SVG;
+}
+
+// 合成要几百毫秒（真实版这里是 fetch + decodeAudioData，动辄好几秒）。
+// 这期间用户完全可能已经把浮层关了 —— 回来时必须先看「现在还开着没有」：
+// 不看的话，页面已经关掉，歌却在后台继续放，而且再也点不到那个暂停键了。
+//
+// 两个容易写错的细节：
+// 1) 认的是「此刻的 session」，不是「发起合成时的那个 session」。关掉又立刻重开是很常见的
+//    操作，合成只排队一次（building 挡着），要是认发起时那个（已经 dead 了），新开的这次
+//    就永远等不到自动播 —— 浮层开着、歌不响、进度条不动。
+// 2) 不管人还在不在，合成结果都先存进 AUDIO.buf。这趟力气花都花了，扔掉的话下次得重来。
+function ensureBuffer() {
+  if (AUDIO.buf || AUDIO.building) return;
+  AUDIO.building = true;
+  setPlayLoading(true);
+  setTimeout(() => {
+    let buf = null;
+    try { buf = buildLoopBuffer(AUDIO.ctx); } catch (e) { console.warn("合成失败", e); }
+    AUDIO.building = false;
+    setPlayLoading(false);
+    if (!buf) return;
+    AUDIO.buf = buf;                          // 先收好，下次开秒播
+    const live = STORY.session;
+    if (!live || live.dead) return;           // ← 人已经走了，别播
+    $("story-dur").textContent = fmtTime(buf.duration);
+    playFrom(0);
+  }, 0);
+}
+
+function playFrom(offset) {
+  const ctx = AUDIO.ctx;
+  if (!ctx || !AUDIO.buf) return;
+  if (AUDIO.src) { try { AUDIO.src.onended = null; AUDIO.src.stop(); } catch (e) {} }
+  const src = ctx.createBufferSource();
+  src.buffer = AUDIO.buf;
+  src.loop = true;
+  src.connect(AUDIO.gain);
+  src.start(0, offset);
+  AUDIO.src = src;
+  AUDIO.startedAt = ctx.currentTime;
+  AUDIO.pausedAt = offset;
+  AUDIO.playing = true;
+
+  $("story-play").innerHTML = PAUSE_SVG;
+  $("story-eq").hidden = false;
+  startProgress();
+}
+
+function pauseMusic() {
+  if (!AUDIO.playing) return;
+  AUDIO.pausedAt += AUDIO.ctx.currentTime - AUDIO.startedAt;
+  if (AUDIO.src) { try { AUDIO.src.onended = null; AUDIO.src.stop(); } catch (e) {} AUDIO.src = null; }
+  AUDIO.playing = false;
+  stopProgress();
+  $("story-play").innerHTML = PLAY_SVG;
+  $("story-eq").hidden = true;
+}
+
+// 关浮层时的彻底停：声音、定时器、进度全部归零。
+// buffer 留着（同一首歌，下次开秒播）；真实版这里应该连 buffer 一起丢掉省内存。
+function stopMusic() {
+  stopProgress();
+  if (AUDIO.src) { try { AUDIO.src.onended = null; AUDIO.src.stop(); } catch (e) {} AUDIO.src = null; }
+  AUDIO.ducked = false;
+  if (AUDIO.gain) { try { AUDIO.gain.gain.cancelScheduledValues(0); AUDIO.gain.gain.value = 1; } catch (e) {} }
+  AUDIO.playing = false;
+  AUDIO.pausedAt = 0;
+  AUDIO.startedAt = 0;
+  $("story-play").innerHTML = PLAY_SVG;
+  $("story-eq").hidden = true;
+  $("story-fill").style.transform = "scaleX(0)";
+  $("story-cur").textContent = "0:00";
+}
+
+function elapsed() {
+  if (!AUDIO.buf) return 0;
+  const raw = AUDIO.playing ? AUDIO.pausedAt + (AUDIO.ctx.currentTime - AUDIO.startedAt) : AUDIO.pausedAt;
+  return raw % AUDIO.buf.duration;
+}
+function startProgress() {
+  stopProgress();
+  AUDIO.timer = setInterval(() => {
+    if (!AUDIO.playing || !AUDIO.buf || SEEK.dragging) return;
+    const pos = elapsed();
+    $("story-cur").textContent = fmtTime(pos);
+    $("story-fill").style.transform = "scaleX(" + (pos / AUDIO.buf.duration) + ")";
+  }, 250);
+}
+function stopProgress() {
+  if (AUDIO.timer) { clearInterval(AUDIO.timer); AUDIO.timer = null; }
+}
+
+// 只管「开」，不管「关」—— 打开浮层时用它。
+// 别在这儿图省事调 togglePlay：歌要是已经在放着，那一下就成了「暂停」。
+function startMusic() {
+  const session = STORY.session;
+  if (!session || AUDIO.playing) return;
+  ensureCtx();
+  if (!AUDIO.ctx) return;
+  if (!AUDIO.buf) { ensureBuffer(); return; }          // 第一次：先合成，好了自己会播
+  playFrom(AUDIO.pausedAt % AUDIO.buf.duration);
+}
+
+function togglePlay() {
+  if (AUDIO.playing) { pauseMusic(); return; }
+  startMusic();
+}
+
+// 【核心逻辑，抄的时候必须要】念白开口 → 音乐让路；念完 → 拉回来。音乐全程不停，只是变小。
+// 不做这一下，配了 TTS 之后念白和音乐会一起冲上来，两个声音谁也听不清。
+// 没配 TTS（纯打字机、没有人声）的话，可以把 duckGain 调到 1，等于关掉这个行为。
+function duck(on) {
+  AUDIO.ducked = !!on;               // 先记状态：歌可能还在合成，节点还没建起来
+  if (!AUDIO.gain || !AUDIO.ctx) return;
+  const target = on ? CONFIG.music.duckGain : 1;
+  try { AUDIO.gain.gain.setTargetAtTime(target, AUDIO.ctx.currentTime, 0.12); }
+  catch (e) { AUDIO.gain.gain.value = target; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑦ 故事浮层
+   【核心逻辑，抄的时候必须要，而且是最容易写漏的一块】
+   一次「打开」= 一个 session。所有在途的异步（定时器、音频合成、TTS 请求）
+   回来时都要先看一眼 session 死了没 —— 少了这道闸，关掉的浮层里歌会继续响，
+   而且 UI 已经没了，用户连暂停都点不到。
+   ══════════════════════════════════════════════════════════════════════ */
+const STORY = {
+  index: 0,
+  session: null,   // { dead, narrSeq, timer } —— 一次「打开」的生命周期
+};
+
+function newSession() {
+  return { dead: false, narrSeq: 0, timer: null };
+}
+// 念白是一条串起来的定时器链（打完这个字才排下一个），同一时刻只会有一个在等，
+// 所以记一个 id 就够 —— 切换/关闭时清掉它，整条链就断了。
+function clearTimers(session) {
+  if (!session) return;
+  if (session.timer) { clearTimeout(session.timer); session.timer = null; }
+}
+function later(session, fn, ms) {
+  session.timer = setTimeout(() => {
+    session.timer = null;
+    if (!session.dead) fn();
+  }, ms);
+}
+
+function openStory(index) {
+  // 这一整个函数跑在点击的同步栈里 —— AudioContext 必须在这儿建（iOS）
+  STORY.index = Math.max(0, Math.min(index || 0, JOURNEY.stops.length - 1));
+  STORY.session = newSession();
+
+  ensureCtx();      // 就在这一下手势里把音频上下文建好（iOS 只认这个时机）
+
+  $("story").hidden = false;
+  document.body.style.overflow = "hidden";
+
+  $("story-song").textContent = CONFIG.music.title;
+  $("story-artist").textContent = CONFIG.music.artist;
+  $("story-dur").textContent = fmtTime(AUDIO.buf ? AUDIO.buf.duration : CONFIG.music.loopSeconds);
+
+  renderDots();
+  renderStop();     // 念白从这里开始（顺带把音乐 duck 下去）
+  startMusic();     // 点开照片就是用户手势，允许自动播
+}
+
+function closeStory() {
+  const session = STORY.session;
+  // dead 标志：在途的异步回调（合成完的音频、还在打字的定时器）回来时一看就知道该原地退出。
+  // 少了这个，关掉的页面里歌会一直响 —— 而且 UI 没了，用户连暂停都点不到。
+  if (session) { session.dead = true; clearTimers(session); }
+  STORY.session = null;
+
+  stopMusic();
+  $("story").hidden = true;
+  document.body.style.overflow = "";
+}
+
+function renderDots() {
+  $("story-dots").innerHTML = JOURNEY.stops
+    .map((_, i) => '<span class="' + (i === STORY.index ? "on" : "") + '" data-dot="' + i + '"></span>')
+    .join("");
+}
+
+// 渲染当前这一处：换图 + caption + 重开念白。音乐不动 —— 整趟就一首歌。
+function renderStop() {
+  const session = STORY.session;
+  if (!session) return;
+  const stop = JOURNEY.stops[STORY.index];
+
+  clearTimers(session);
+  session.narrSeq++;             // 作废上一处还没念完的那串定时器
+
+  const bg = $("story-bg");
+  bg.style.backgroundImage = 'url("' + photoOf(stop) + '")';
+  bg.style.animation = "none"; void bg.offsetWidth; bg.style.animation = "";   // 重启 Ken Burns
+
+  $("story-en").textContent = stop.placeEn || "";
+  $("story-place").innerHTML = esc(stop.place || stop.placeEn || "");
+  $("story-date").textContent = stop.date || "";
+
+  $("story-settled").hidden = true;
+  $("story-note").textContent = "";
+  $("story-narr").style.display = "";
+  $("story-narr-line").classList.remove("out");
+
+  document.querySelectorAll("#story-dots span").forEach((d, i) => d.classList.toggle("on", i === STORY.index));
+
+  typewriter(fill(stop.note));
+}
+
+// 逐字念白：一句一句打出来，打完淡出换下一句，全部念完落到左下角。
+// 每一层回调都拿 seq 跟当前对表 —— 切换/关闭时 seq 一变，旧的那串自己就哑了。
+// 【核心逻辑，抄的时候必须要】
+// 【打字速度那两个数（165ms/字、气口 700ms）只是我的手感，随便调】
+// 配了 TTS 的话，节奏改成跟着音频走：拿到时长按字数摊开，或直接听 TTS 的逐字时间戳。
+// 不配 TTS 也完全成立 —— 就是没有人声的纯打字机动画，功能不缺。
+function typewriter(note) {
+  const session = STORY.session;
+  if (!session) return;
+  const line = $("story-narr-line");
+  const sentences = splitSentences(note);
+  if (!sentences.length) { $("story-narr").style.display = "none"; onNarrDone(note); return; }
+
+  const seq = session.narrSeq;
+  duck(true);
+
+  let si = 0;
+  function playSentence() {
+    if (session.dead || seq !== session.narrSeq) return;
+    const sent = sentences[si];
+    const isLast = si >= sentences.length - 1;
+    line.classList.remove("out");
+
+    const durMs = Math.max(1500, sent.length * 165);
+    const interval = Math.max(45, (durMs * 0.92) / sent.length);
+    let i = 0;
+    (function step() {
+      if (session.dead || seq !== session.narrSeq) return;
+      i++;
+      line.innerHTML = esc(sent.slice(0, i)) + '<span class="jstory-narr-cursor">|</span>';
+      if (i < sent.length) { later(session, step, interval); return; }
+      // 一句念完：留个气口，再淡出换下一句
+      later(session, () => {
+        if (seq !== session.narrSeq) return;
+        line.classList.add("out");
+        later(session, () => {
+          if (seq !== session.narrSeq) return;
+          if (isLast) onNarrDone(note);
+          else { si++; playSentence(); }
+        }, 460);
+      }, 700);
+    })();
+  }
+  playSentence();
+}
+
+// 念完：正中那行淡出，整段落到左下角（默认就是展开的），地名后面挂上重播提示。
+// 【核心：念完要有个落点】念白飘完就没了的话，用户想回头读一遍就没得读。
+// 【落到左下角、默认展开、4 行收起，这些都是我的选择，随便换】
+function onNarrDone(note) {
+  duck(false);
+  $("story-narr-line").classList.add("out");
+
+  const stop = JOURNEY.stops[STORY.index];
+  $("story-place").innerHTML = esc(stop.place || stop.placeEn || "") +
+    '<span class="cap-replay-hint">↻</span>';
+
+  if (!note) return;
+  const noteEl = $("story-note");
+  const moreBtn = $("story-more");
+  noteEl.textContent = note;
+  noteEl.classList.add("expanded");          // 默认全文展开，超过 42vh 在里面滚
+  noteEl.scrollTop = 0;
+  moreBtn.textContent = "收起 ↑";
+  $("story-settled").hidden = false;
+  // 收起来只有 4 行，短文本收不收都一样 —— 量一下真实高度，够不到 4 行就不给按钮。
+  // （别按字数估：字号、屏宽、中英混排都会让「一行几个字」差出一倍。）
+  const lh = parseFloat(getComputedStyle(noteEl).lineHeight) || 21;
+  moreBtn.hidden = noteEl.scrollHeight <= lh * 4 + 2;
+}
+
+function replayNarration() {
+  const stop = JOURNEY.stops[STORY.index];
+  $("story-settled").hidden = true;
+  $("story-narr").style.display = "";
+  $("story-narr-line").classList.remove("out");
+  if (STORY.session) STORY.session.narrSeq++;
+  clearTimers(STORY.session);
+  typewriter(fill(stop.note));
+}
+
+function navStop(delta) {
+  if (!STORY.session) return;
+  const n = JOURNEY.stops.length;
+  STORY.index = (STORY.index + delta + n) % n;
+  renderStop();     // 音乐不打断
+}
+
+/* ── 进度条拖动
+   【只是审美，随便删】不给拖的话，把这一节和 .jstory-player-track 一起去掉即可。 ── */
+const SEEK = { dragging: false };
+
+function seekRatioFromEvent(e) {
+  const rect = $("story-track").getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+}
+function previewSeek(ratio) {
+  $("story-fill").style.transform = "scaleX(" + ratio + ")";
+  if (AUDIO.buf) $("story-cur").textContent = fmtTime(ratio * AUDIO.buf.duration);
+}
+
+/* ── 事件绑定（浮层是静态节点，只绑一次）
+   【核心：关闭 / 播放暂停 / 左右切换 / 卸载清理，这四件必须有】
+   【左右滑、键盘快捷键、点地名重播，都是锦上添花，随便删】 ── */
+function bindStory() {
+  const ov = $("story");
+
+  ov.addEventListener("click", (e) => {
+    if (e.target.closest("#story-close")) { closeStory(); return; }
+    if (e.target.closest("#story-play"))  { togglePlay(); return; }
+    if (e.target.closest("#story-place")) { replayNarration(); return; }
+
+    const more = e.target.closest("#story-more");
+    if (more) {
+      const expanded = $("story-note").classList.toggle("expanded");
+      more.textContent = expanded ? "收起 ↑" : "展开全文 ↓";
+      return;
+    }
+    const dot = e.target.closest("[data-dot]");
+    if (dot) { navStop(parseInt(dot.dataset.dot, 10) - STORY.index); return; }
+  });
+
+  // 左右滑切换。不用 setPointerCapture —— 会把里面按钮的点击一起劫走。
+  let downX = null, downY = null;
+  const photo = $("story-photo");
+  photo.addEventListener("pointerdown", (e) => { downX = e.clientX; downY = e.clientY; });
+  photo.addEventListener("pointerup", (e) => {
+    if (downX == null) return;
+    const dx = e.clientX - downX, dy = e.clientY - downY;
+    downX = downY = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) navStop(dx < 0 ? 1 : -1);
+  });
+  photo.addEventListener("pointercancel", () => { downX = downY = null; });
+
+  // 进度条：按下即预览，松手才真的跳
+  const track = $("story-track");
+  track.addEventListener("pointerdown", (e) => {
+    if (!AUDIO.buf) return;
+    SEEK.dragging = true;
+    track.classList.add("dragging");
+    try { track.setPointerCapture(e.pointerId); } catch (err) {}
+    previewSeek(seekRatioFromEvent(e));
+    e.preventDefault();
+  });
+  track.addEventListener("pointermove", (e) => { if (SEEK.dragging) previewSeek(seekRatioFromEvent(e)); });
+  const endSeek = (e) => {
+    if (!SEEK.dragging) return;
+    SEEK.dragging = false;
+    track.classList.remove("dragging");
+    const offset = seekRatioFromEvent(e) * AUDIO.buf.duration;
+    if (AUDIO.playing) playFrom(offset);
+    else { AUDIO.pausedAt = offset; previewSeek(offset / AUDIO.buf.duration); }
+  };
+  track.addEventListener("pointerup", endSeek);
+  track.addEventListener("pointercancel", () => {
+    SEEK.dragging = false;
+    track.classList.remove("dragging");
+  });
+
+  // 键盘：Esc 关，左右切
+  document.addEventListener("keydown", (e) => {
+    if ($("story").hidden) return;
+    if (e.key === "Escape") { closeStory(); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { navStop(1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft")  { navStop(-1); e.preventDefault(); }
+  });
+
+  // 卸载清理：切到后台标签页/关页面时，别把声音留在那儿
+  window.addEventListener("pagehide", () => {
+    if (STORY.session) STORY.session.dead = true;
+    stopMusic();
+    if (AUDIO.ctx && AUDIO.ctx.state === "running") AUDIO.ctx.suspend().catch(() => {});
+  });
+}
+
+/* ── 起飞 ── */
+renderChat();
+bindStory();
+$("story-play").innerHTML = PLAY_SVG;
+</script>
+</body>
+</html>

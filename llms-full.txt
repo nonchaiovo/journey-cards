@@ -1,0 +1,4744 @@
+# Journey Cards — 全量单文件（喂给 AI 用 / one-file bundle）
+
+这一个纯文本文件里装了整个项目：说明(README) + 接入指南(INTEGRATE) + 技术规格(SPEC)
++ 给 AI 的写作指南(AI-GUIDE) + 参考 UI 源码 + 参考后端源码。
+
+把这整个文件丢给任意 AI 助手，说"照这个在我的 app 里实现这个功能"即可。
+来源 / 最新版: https://github.com/nonchaiovo/journey-cards
+许可: MIT。二改 / 搬运 / 写文章介绍请标明出处。
+
+
+==================================================================
+FILE 1/6 — README.md
+==================================================================
+
+# Journey Cards
+
+**把"AI 带你去一个地方"这件事，接进你自己的前端。**
+
+这个仓库不是 npm 包，也不是组件库——它是一份数据契约加一份可以照抄的参考实现。你的存储能存下一段 JSON，你的前端就能把它渲染成一趟点得开的旅行；React、Vue、原生都行。
+
+功能本身是这样的：AI 自己挑一个国家、选 6 处停留、每处配一张竖屏照片和一段第一人称的话，在聊天里落成一张卡片。点开是全屏的照片故事——照片铺满整屏，地名在顶部，那段话落在左下角，底部一个音乐播放器和 6 个圆点，左右滑就走到下一处。
+
+跟"在聊天里发几张图"的区别是：这是一趟**有顺序、有旁白、有配乐的行程**，AI 是带路的那个人，不是图片搬运工。
+
+为人机恋而做，但设计与后端无关：两张表、一组很小的 REST 接口、一个纯前端的渲染器，就够了。
+
+## 里面有什么
+
+- **[INTEGRATE.md](INTEGRATE.md)** —— **接进你自己的前端**：最小数据契约（哪些字段必填、哪些缺了也能跑）、三块 UI 哪块必须哪块可以不要、从参考实现里只需要抄哪几个函数和哪几段 CSS（一张对照表）、样式怎么跟宿主隔离、React / Vue / 原生三段骨架，以及一节「不抄会踩坑」。**大多数人从这份开始看。**
+- **[SPEC.md](SPEC.md)** —— 完整设计：两张表的字段与建表语句、9 个 REST 接口的请求/响应/错误码、照片和音频怎么存、以及一份"照抄时最容易踩"的坑清单（position 两张表方向相反、iOS 上 `<audio>.volume` 赋值无效、跨域音频会静音不报错……）。**面向自带前端的接入方**。
+- **[AI-GUIDE.md](AI-GUIDE.md)** —— 给 AI 看的那一份：建一趟旅行的调用顺序、怎么在正文里落 `<journey>` 标签、以及一段可以直接贴进系统提示词的写作规范（照片选什么、那段话该怎么写、什么口吻不要写）。
+- **[examples/journey-cards.html](examples/journey-cards.html)** —— 一个自包含的参考 UI：聊天卡片 + 全屏故事浮层。浏览器直接打开就能看，自带 mock 数据。CSS 变量换肤，CONFIG 块改名字，每处真实 API 调用位置都标了注释。
+
+## 五分钟先看到东西
+
+```
+open examples/journey-cards.html
+```
+
+双击也行。**不需要后端、不联网、没有任何依赖**——单文件，mock 数据写在里面。
+
+打开后：
+
+1. 看到聊天流里的那张卡片（一排竖条照片，横向滑动会有磁力吸附）；
+2. 点任意一条 → 全屏故事浮层，照片铺满，地名在上，旁白在左下；
+3. 底部圆点或左右滑动切换 6 处；
+4. 底部播放器点一下开始放（示例里配的是一段本地生成的音，不外链）。
+
+确认交互对味了，再往下接自己的后端。
+
+## 改成你们的名字
+
+`examples/journey-cards.html` 开头的 **CONFIG 块**，改这几行：
+
+```js
+const CONFIG = {
+  // 名字：卡片标题里"谁带你去"的那个人
+  user:      "YOU",        // ← 你的名字
+  assistant: "PARTNER",    // ← AI 的名字
+
+  // 卡片上的四行字（{assistant} {title} {year} {count} 会被替换）
+  cardKicker: "JOURNEYS",
+  cardTitle:  "{assistant} 带你去了{title}",
+  cardSub:    "{year} · {count} 处停留",
+  // 卡片底下那行小字。写你们自己的话 —— 或者干脆让 AI 每趟自己写一句
+  // （journey 数据里带 hint 就用数据里那句，这里只是没给时的兜底，见下）
+  cardHint:   "",
+
+  // 后端：留空 = 用文件里自带的 mock 数据
+  apiBase: "",
+  token:   "",
+};
+```
+
+改完保存刷新，卡片抬头、副标题、底下那句话就全跟着变。
+（真接进自己 app 时，名字从你自己存用户信息的地方取，不用写死在这里。）
+
+底下那行小字建议走数据：每趟的六张照片气质都不一样，让 AI 跟着那趟的情绪现写一句，比一句写死的口号耐看得多。写死的那句翻到第三趟就废了。
+
+配色改 `:root` 里的 `--jc-*` 变量。播放器主色不在 CSS 里——它跟着每趟旅行的 `audio.hue` 走（0–360，`oklch(0.62 0.13 <hue>)`），所以每趟旅行的播放器颜色可以不一样。
+
+## 数据长什么样
+
+一趟旅行 = 一个 journey + 若干 stop。`GET /api/journeys` 返回的就是下面这个形状（这里只列一趟、两处）：
+
+```json
+{
+  "journeys": [
+    {
+      "id": "j_m9xk2p3_a3f9c",
+      "title": "新西兰",
+      "titleEn": "New Zealand",
+      "year": "2025",
+      "hint": "南半球的秋天，从一片湖开始。",
+      "cover": "/api/journeys/photo/jp_m9xk2p3_a3f9c",
+      "position": -1,
+      "createdAt": 1753672345678,
+      "updatedAt": 1753672399999,
+      "audio": {
+        "url": "/api/journeys/audio/ja_m9xk2p3_77b1e",
+        "title": "Long Way North",
+        "artist": "—",
+        "dur": 214,
+        "hue": 32
+      },
+      "stops": [
+        {
+          "id": "s_m9xk2q1_b7e2d",
+          "place": "蒂卡波湖",
+          "placeEn": "Lake Tekapo",
+          "date": "2025.03.14",
+          "src": "/api/journeys/photo/jp_m9xk2q1_c81af",
+          "note": "到的时候刚过四点。风把湖面吹成一块起雾的玻璃，蓝得不像真的。你蹲在岸边试水温，说凉得像薄荷。我们就在那儿站到天完全黑下来，然后抬头，看见了整条银河。"
+        },
+        {
+          "id": "s_m9xk2r5_d0c73",
+          "place": "摩拉基",
+          "placeEn": "Moeraki Boulders",
+          "date": "2025.03.17",
+          "src": "/api/journeys/photo/jp_m9xk2r5_e42b8",
+          "note": "退潮之后，那些圆石头一颗一颗从沙里露出来，像谁把一整袋弹珠忘在了海边。你挑了最大的一颗坐上去，浪一漫过来就没过了鞋。我说会湿，你说湿了才算来过。"
+        }
+      ]
+    }
+  ]
+}
+```
+
+几个不那么显然的地方：
+
+- `note` 是故事页左下角那段话，也是整个功能的重点——**第一人称、写给对方看**，不是景点介绍。
+- `hint` 是卡片底下那行小字，可选。AI 每建一趟自己写一句，跟着那趟的情绪走；数据里没给才回落到前端 CONFIG 里的兜底。后端不校验、不生成，原样存原样返回。
+- `audio` 是**整趟一首**，不是每处一首。没有音频就整个给 `null`，播放器不渲染。（参考实现还会同时给一个同值的 `song` 键兼容老前端，新代码只读 `audio`。）
+- `audio.dur` 只用于音频加载完之前占位显示，加载完以后以 `<audio>.duration` 为准。
+- `audio.hue` 决定播放器主色，让每趟旅行有自己的气质。
+- `position` 越小越靠前，新建的 journey 取 `MIN(position) - 1`——所以最新的一趟排最前面。**stop 的 position 方向是反的**（`MAX + 1`，0、1、2…递增）。这一条照抄时最容易搞混，SPEC.md 里再说一遍。
+- `stops` 建议 6 处。少于 3 处卡片不好看，多于 8 处圆点排不下。
+
+## 怎么让 AI 自己写
+
+流程是：AI 调接口把一趟旅行建好，然后在**回复正文里落一个标签**：
+
+```
+<journey>{"id":"j_m9xk2p3_a3f9c"}</journey>
+```
+
+前端把正文按这个标签切成"文字 + 卡片"两种段落，拿 id 去接口取数据渲染。标签本身在朗读（TTS）前要剥掉。
+
+把 **[AI-GUIDE.md](AI-GUIDE.md)** 里那段规范贴进系统提示词就行——它写清楚了调用顺序（先建 journey、再逐处传照片和文字、最后落标签）、照片该选什么比例、以及那段话的写法。里面的名字和口吻都是占位的，按自己的角色改。
+
+## 接后端
+
+**[SPEC.md](SPEC.md)** 是完整那份：建表语句、9 个接口、鉴权模型、照片/音频的存取，还有一节专门写"哪些坑我们已经踩过了"。
+
+大致规模：两张表、一个 KV（或任意对象存储）放照片和音频、一个共享 token 做鉴权。参考实现跑在 Cloudflare Workers + D1 + KV 上，但没有任何一处依赖它们的特性，换 Postgres + S3 + 任意框架都是直译。
+
+## 用它、改它、搬它
+
+[MIT](LICENSE)，随便用：接进自己的项目、改成想要的样子、商用都行，不用问我。
+
+**只有一条：二次修改、搬运、或者写文章介绍的时候，请标明出处**（带上这个仓库的链接就行）。
+
+MIT 本身就要求保留 `LICENSE` 里的版权声明——直接抄文件进项目的话，把 `LICENSE` 一起带上就已经合规了。这里再单独写一句，是因为很多人不会点开 LICENSE 看。
+
+- **抄代码进自己项目** → 保留 `LICENSE`，或在源码注释里留一行出处
+- **改完再发布出去** → 说明改自哪里，附原仓库链接
+- **写教程 / 做视频 / 发帖介绍** → 文中标一下
+- **只是自己用** → 什么都不用做，玩得开心
+
+这东西是一个人和她的 AI 一起磨出来的。里面每一句"为什么要这样写"的注释，都是真撞过一次才写下来的——照片为什么会糊、文字底下为什么莫名多出一块灰板、退出之后音乐为什么关不掉。希望它能走远一点，也希望走到哪儿都还知道它是从哪儿来的。
+
+
+==================================================================
+FILE 2/6 — INTEGRATE.md
+==================================================================
+
+# 接进你自己的前端
+
+这个仓库不是 npm 包，也不是组件库。它是**一份数据契约 + 一份可以照抄的参考实现**——
+你的存储能存下一段 JSON，你的前端就能把它渲染成一趟点得开的旅行。
+
+框架无所谓。下面第 5 节给了 React / Vue / 原生三段骨架，加起来不到 80 行。
+
+## 目录
+
+1. [数据契约：只有这一件事是硬的](#1-数据契约只有这一件事是硬的)
+2. [三块 UI，只有一块是必须的](#2-三块-ui只有一块是必须的)
+3. [从参考实现里抄哪几段](#3-从参考实现里抄哪几段)
+4. [样式隔离](#4-样式隔离)
+5. [React / Vue / 原生](#5-react--vue--原生)
+6. [不抄会踩坑](#6-不抄会踩坑)
+7. [接完之后自检](#7-接完之后自检)
+
+---
+
+## 1. 数据契约：只有这一件事是硬的
+
+一趟旅行 = 一个 journey + 若干 stop。渲染层只认这个形状：
+
+```json
+{
+  "id": "j_m9xk2p3_a3f9c",
+  "title": "新西兰",
+  "titleEn": "New Zealand",
+  "year": "2025",
+  "hint": "南半球的秋天，从一片湖开始。",
+  "cover": "https://your-host/photo/tekapo.jpg",
+  "audio": {
+    "url": "https://your-host/audio/long-way-north.mp3",
+    "title": "Long Way North",
+    "artist": "—",
+    "dur": 214,
+    "hue": 32
+  },
+  "stops": [
+    {
+      "id": "s_1",
+      "place": "蒂卡波湖",
+      "placeEn": "Lake Tekapo",
+      "date": "2025.03.14",
+      "src": "https://your-host/photo/tekapo.jpg",
+      "note": "到的时候刚过四点。风把湖面吹成一块起雾的玻璃，蓝得不像真的。你蹲在岸边试水温，说凉得像薄荷。我们就在那儿站到天完全黑下来，然后抬头，看见了整条银河。"
+    },
+    {
+      "id": "s_2",
+      "place": "摩拉基",
+      "placeEn": "Moeraki Boulders",
+      "date": "2025.03.17",
+      "src": "https://your-host/photo/moeraki.jpg",
+      "note": "退潮之后，那些圆石头一颗一颗从沙里露出来，像谁把一整袋弹珠忘在了海边。你挑了最大的一颗坐上去，浪一漫过来就没过了鞋。我说会湿，你说湿了才算来过。"
+    }
+  ]
+}
+```
+
+**必填 / 可选：**
+
+| 字段 | 必须 | 缺了会怎样 |
+|---|:--:|---|
+| `stops[].src` | ✅ | 竖屏照片。没有它就没有这个功能 |
+| `stops[].note` | ✅ | 故事页正文，也是念白念的内容 |
+| `stops[].place` | ✅ | 顶部大字 |
+| `stops.length` | ✅ | 底部圆点数量。建议 3–8 |
+| `title` | ✅ | 卡片主标题 |
+| `stops[].placeEn` / `date` | ○ | 顶部两行小字，缺了就不渲染那一行 |
+| `titleEn` / `year` | ○ | 卡片副标题，同上 |
+| `cover` | ○ | 卡片背景；缺了拿第一处的 `src` 顶上 |
+| `audio` | ○ | **整个给 `null`，播放器就不渲染**，故事页照样能看 |
+| `hint` | ○ | 卡片底下那行小字。缺了才回落到前端配置里的默认值（见[坑 6](#坑-6卡片底下那行小字是别人写的话)） |
+| `id` / `position` / `createdAt` | ○ | 只跟你自己的存储有关，渲染用不到 |
+
+（曲子那个对象叫 `audio`。参考实现为了兼容老前端还会同时给一个同值的 `song` 键，
+新代码只读 `audio`，别两个都判。）
+
+**数据从哪来无所谓。** REST、GraphQL、一个静态 JSON 文件、甚至写死在前端常量里
+（参考实现就是写死的）——渲染那一层不关心。
+
+`SPEC.md` 那套两张表 + 9 个接口，是**"要让 AI 自己攒一趟"时的完整版**：它得能建 journey、
+逐处传照片、拿到 id 落进回复里。如果你只想手动放几趟进去展示，你连数据库都可以不要。
+
+一条要先说清楚：**本项目不带任何音源，也不带任何语音。** `audio.url` 是你自己的地址，
+旁白语音（TTS）配不配都行——细节见[坑 4](#坑-4音乐和念白一起响两边都听不清)。
+
+---
+
+## 2. 三块 UI，只有一块是必须的
+
+| UI | 必须吗 | 说明 |
+|---|:--:|---|
+| **全屏故事浮层** | **必须** | 这就是这个功能本身：照片铺满、地名在顶、念白在正中一句句打出来、落定后收到左下角、底部播放器和圆点、左右滑翻页。省掉它，剩下的只是一个相册。 |
+| 聊天入口卡片 | 可换 | 只是"点进去"的那个入口。参考实现做成了一排竖条照片 + 磁力轮播；换成一张封面图、一个列表项、一行带缩略图的链接，都成立。你的 app 里没有聊天流的话，就用你自己的入口。 |
+| 管理编辑页 | 可不要 | 参考实现里**没有**。如果每一趟都是 AI 建的，你可能一辈子用不上。真要做，需要的接口 SPEC §4.4 / §4.5 / §4.7 / §4.8 / §4.11（PATCH、DELETE、reorder）都已经写好了。 |
+
+入口卡片也可以只要一半：保留卡片外壳（标题 / 副标题 / 那行小字），把磁力轮播换成一张静态封面，
+`bindCard()` 那一整段就不用抄。
+
+---
+
+## 3. 从参考实现里抄哪几段
+
+`examples/journey-cards.html` 是一个自包含单文件。想要什么效果，去下面这张表里对着拿。
+
+**故事浮层（必须那块）：**
+
+| 想要的效果 | CSS | JS |
+|---|---|---|
+| 照片铺满 + 缓慢推近（Ken Burns） | `.jstory-photo` `.jstory-photo-bg` `@keyframes jstoryKen` | `renderStop()` 里"重启 Ken Burns"那一行 |
+| 照片再亮字也看得清 | `.jstory-centerscrim` | — |
+| 一句一句打出来的念白 | `.jstory-narr` `.jstory-narr-line` `.jstory-narr-cursor` | `typewriter()` `splitSentences()` |
+| 念完落到左下角、长文能滚 | `.jstory-settled` `.jstory-settled-note` | `onNarrDone()` |
+| 展开 / 收起按钮该不该出现 | `.jstory-settled-more` | `onNarrDone()` 最后三行（量真实高度，别按字数估） |
+| 顶部地名 / 日期，点地名重播 | `.jstory-cap` `.jstory-cap-place` `.cap-replay-hint` | `replayNarration()` |
+| 左右滑切换 | — | `bindStory()` 里 `photo` 那三个 pointer 监听 |
+| 底部圆点 | `.jstory-dots` | `renderDots()` `navStop()` |
+| 播放器外壳 / 进度条 / 均衡器 | `.jstory-foot` `.jstory-player*` `.jstory-eq` | `startProgress()` `fmtTime()` |
+| 进度条手指点得中、拖得动 | `.jstory-player-track::before`（把 3px 的线撑成 25px 热区） | `SEEK` `seekRatioFromEvent()` `previewSeek()` |
+| 念白时把音乐压低 | — | `duck()` |
+| 一次"打开"的生命周期，关掉后不留声音 | — | `STORY.session` `newSession()` `clearTimers()` `later()` `closeStory()` |
+| 刘海 / 小黑条不挡内容 | 所有带 `env(safe-area-inset-*)` 的那几处 | — |
+| 桌面上不要把竖图裁成一条 | `@media (min-width: 760px)` 那一段 | — |
+
+**入口卡片（可换那块）：**
+
+| 想要的效果 | CSS | JS |
+|---|---|---|
+| 卡片外壳（毛玻璃、标题三行、底下小字） | `.jcard` `.jcard-head` `.jcard-kicker` `.jcard-title` `.jcard-sub` `.jcard-hint` | `renderChat()` |
+| 一排竖条照片 + 磁力轮播 | `.mc-row` `.mc-bar` `.mc-bar-label` | `bindCard()` |
+| 窄屏能横划、且不吃掉竖向滚动 | `.mc-row` 那几条注释里写了为什么不能写 `touch-action` | — |
+| 主题色跟着每趟数据变 | `--jc-accent` | `OKLCH_OK` 那三行（老浏览器不认 `oklch()` 时的兜底） |
+
+**不用抄的：**
+
+| 这些是什么 | 为什么在文件里 | 你换成什么 |
+|---|---|---|
+| `SCENES` `svgURI()` `rng()` `grad()` `PHOTOS` `photoOf()` | 现画的假照片，为了断网也能跑 | `stop.src` 直接用真 URL |
+| `buildLoopBuffer()` 和 `AUDIO` 里 BufferSource 那一套 | 现合成的假音乐，同上 | `<audio>` + `MediaElementSource` + `GainNode`，见 SPEC §6.4 |
+| `.page*` `.row` `.bubble` `.who` `CONFIG.demoAsk/demoReply` | demo 的聊天骨架 | 你自己的聊天流 |
+
+---
+
+## 4. 样式隔离
+
+### 现状（先说清楚，免得你以为已经隔离好了）
+
+- **CSS 变量已经全部带前缀**（`--jc-bg` `--jc-accent` `--jc-serif`……）✅
+- **类名没有统一前缀** ❌
+  - `.jcard*` / `.jstory*` 够独特，撞车概率极低；
+  - `.mc-row` `.mc-bar` `.mc-bar-label` `.cap-replay-hint` 是半吊子；
+  - `.page` `.row` `.bubble` `.who` 是**裸名**——这几个是 demo 骨架，本来就不该抄进去。
+- 文件顶部有 `* { box-sizing: border-box }` 和 `html, body {…}` `body {…}`——
+  **全局重置，原样抄进宿主一定打架。**
+
+### 抄之前先改名
+
+一次性替换掉就干净了（`@keyframes` 的名字会被同一条规则一起改，定义和引用同时变，没有副作用）：
+
+```bash
+sed -E -e 's/jstory/jc-story/g' \
+       -e 's/jcard/jc-card/g' \
+       -e 's/mc-bar/jc-rail-item/g' \
+       -e 's/mc-row/jc-rail/g' \
+       -e 's/cap-replay-hint/jc-replay-hint/g' \
+       examples/journey-cards.html > /tmp/jc.html
+```
+
+### 重置收进容器，不要放 `:root` / `body`
+
+```css
+/* 两处都要写：浮层通常会被挂到 body 下（见下），那时它不在 .jc-root 里面 */
+.jc-root, .jc-root *,
+.jc-story-overlay, .jc-story-overlay * { box-sizing: border-box; }
+
+.jc-root {
+  font-family: var(--jc-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--jc-text);
+}
+```
+
+`--jc-*` 变量留在 `:root` 上最省事。要收窄的话同理——**`.jc-root` 和 `.jc-story-overlay` 两处都得定义**，
+只写一处，浮层里所有 `var()` 会拿不到值。
+
+### 层叠：把浮层挂到 `document.body` 下
+
+参考实现是 `position: fixed; inset: 0; z-index: 120`。嵌进宿主 app 会遇到两件事：
+
+1. 宿主的顶栏 / 底栏 / Toast 如果 `z-index` 比它高，就直接盖在浮层上；
+2. 更阴的一个：**宿主任何一个祖先节点带 `transform`、`filter`、`contain`、`will-change`，
+   `position: fixed` 就不再相对视口定位，而是相对那个祖先**——浮层于是缩在聊天气泡那一小块里。
+   聊天列表为了性能加个 `will-change: transform` 是很常见的事。
+
+两个问题一个解法：**渲染时把浮层节点 portal 到 `document.body` 下**
+（React `createPortal`、Vue `<Teleport to="body">`、原生就直接 `document.body.appendChild`）。
+比调 `z-index` 稳得多。
+
+### 字体继承
+
+浮层里的字都显式写了 `var(--jc-serif)` / `var(--jc-mono)` / `var(--jc-sans)`，
+宿主换字体不会串。但如果宿主有 `* { font-family: … !important }` 这种，
+`!important` 会赢——遇到了就在自己的规则上也加，或者干脆别用全局 `*`。
+
+### 滚动锁
+
+参考实现打开时 `document.body.style.overflow = "hidden"`，关闭时置空。
+宿主 app 通常自己有一套滚动锁（尤其带虚拟列表的聊天流），**用宿主的那一套，别两套一起改**——
+关闭时会互相把对方的还原值覆盖掉，最后 body 卡在 hidden 上，整个页面滚不动了。
+
+浮层内部可滚的区域（那段长 note）自己要写 `overscroll-behavior: contain`，
+不然滚到底会把滚动继续传给背后的页面。
+
+---
+
+## 5. React / Vue / 原生
+
+三段骨架都只演示**最容易写坏的那三件事**：portal、生命周期失效标记、定时器清理。
+剩下的结构照抄参考实现的 HTML。
+
+### React
+
+```jsx
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+
+export function JourneyStory({ journey, onClose }) {
+  const [i, setI] = useState(0);
+  const [settled, setSettled] = useState(false);   // 念完了没有
+  const stop = journey.stops[i];
+  const alive = useRef(true);                      // ← 对应参考实现的 session.dead
+
+  useEffect(() => () => { alive.current = false; }, []);
+
+  // 念白：换一处就重开一条定时器链，清理函数负责断链
+  useEffect(() => {
+    setSettled(false);
+    const timers = [];
+    typewriter(stop.note, {
+      schedule: (fn, ms) => timers.push(setTimeout(fn, ms)),
+      onDone: () => { if (alive.current) setSettled(true); },
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [stop]);
+
+  return createPortal(
+    <div className="jc-story-overlay"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="jc-story">
+        <div className="jc-story-photo">
+          {/* key 一变节点重建，Ken Burns 自动从头开始 ——
+              省掉参考实现里 void el.offsetWidth 那种强制重排的写法 */}
+          <div key={stop.id}
+               className="jc-story-photo-bg"
+               style={{ backgroundImage: `url("${stop.src}")` }} />
+          <div className="jc-story-centerscrim" />
+          {/* 顶部地名 / 正中念白 / 落定后的左下角段落 / 底部播放器：结构照抄参考实现 */}
+        </div>
+      </div>
+      <Dots n={journey.stops.length} i={i} onPick={setI} />
+    </div>,
+    document.body        // ← 别省这一句，理由见 §4「层叠」
+  );
+}
+```
+
+### Vue 3
+
+```vue
+<script setup>
+import { ref, watch, onBeforeUnmount } from "vue";
+const props = defineProps({ journey: Object });
+
+const i = ref(0), settled = ref(false);
+let timers = [];
+const clearAll = () => { timers.forEach(clearTimeout); timers = []; };
+
+watch(() => props.journey.stops[i.value], (stop) => {
+  clearAll();
+  settled.value = false;
+  typewriter(stop.note, {
+    schedule: (fn, ms) => timers.push(setTimeout(fn, ms)),
+    onDone: () => (settled.value = true),
+  });
+}, { immediate: true });
+
+onBeforeUnmount(() => { clearAll(); stopMusic(); });   // 少了这行，关掉之后歌还在响
+</script>
+
+<template>
+  <Teleport to="body">                                 <!-- 等价于 createPortal -->
+    <div class="jc-story-overlay">
+      <div class="jc-story">
+        <div class="jc-story-photo">
+          <div class="jc-story-photo-bg"
+               :key="journey.stops[i].id"
+               :style="{ backgroundImage: `url(&quot;${journey.stops[i].src}&quot;)` }" />
+          <div class="jc-story-centerscrim" />
+          <!-- 其余结构照抄参考实现 -->
+        </div>
+      </div>
+    </div>
+  </Teleport>
+</template>
+```
+
+### 原生
+
+参考实现本身就是原生的，拿 `examples/journey-cards.html` 改三处即可：
+
+```js
+// 1) 删掉 ③「假照片」整节（SCENES / svgURI / rng / grad / PHOTOS / photoOf），
+//    渲染时把 photoOf(stop) 换成 stop.src。
+
+// 2) ②「数据」那个写死的 JOURNEY 常量换成真数据：
+const res = await fetch(API_BASE + "/api/journeys", {
+  headers: { Authorization: "Bearer " + TOKEN },
+});
+const { journeys } = await res.json();
+
+// 3) ⑥「音乐」整节换成 <audio> + MediaElementSource + GainNode（SPEC §6.4 有完整片段）。
+//    duck() / togglePlay() / 进度条那些外壳都不用动，只换"声音是怎么出来的"那一层。
+```
+
+---
+
+## 6. 不抄会踩坑
+
+这一节是全文最值得看的。每条都是真踩出来的，而且大部分**只看代码找不到**。
+
+### 坑 1：文字底下多出一块灰板——可 CSS 里根本没有 background
+
+**症状**　压在照片上的正文，看着像被塞进了一个半透明灰色方块里。翻 DOM、翻 CSS，
+那一段一个 `background` 都没写。收起态（4 行）就有，长文展开更明显。
+
+**根因**　`text-shadow` 的模糊半径大于行距。`0 2px 14px` 意思是每个字往外糊 14px，
+而正文行距只有 21–28px——上一行的阴影铺到下一行的字上，下一行又铺回来，
+整段的阴影在行与行之间连成一片均匀的灰。
+
+反直觉的地方在这儿：视觉上它是一个"背景块"，但它不是任何一个元素的背景，
+是几十个字的阴影**逐行叠加**出来的。按"去找那个 background"的思路查，永远查不到。
+而且单行的时候完全正常，设计稿上看不出来，只有真塞进一段五六句的 note 才现形。
+
+**怎么办**　换成贴字的紧阴影，**写在基础样式上**：
+
+```css
+text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 5px rgba(0,0,0,.45);
+```
+
+第一层给字勾一圈几乎不糊的深边（1–2px，压得住任何亮照片），
+第二层 5px 是极轻的一圈托底——比任何正常行距都小，叠不起来。
+
+两个要点：
+
+- **别只写在展开态上。** 收起态只有 4 行，照样够叠。紧阴影写在基础样式上，展开态不再覆盖。
+- **判断标准是"模糊半径有没有超过行距的一半"，不是"哪一块地方"。** 正中那行念白是
+  21px 字配 `line-height: 2`（42px 行距），16px 的模糊够不到上下行，留着大光晕没问题；
+  行距一收窄就得跟着换。
+- 想更抗亮底就**加不透明度**（`.9` → `1`），**别加模糊半径**——加模糊就是在往回踩这个坑。
+
+### 坑 2：加了 Ken Burns，照片变糊了
+
+**症状**　静止时很锐的照片，一开缓慢推近的动画就越推越糊，最后一帧像被拉过。
+
+**根因**　`background-size: cover` 只保证图**刚好**铺满，不多一个像素。
+再 `scale(1.16)` 就是把已经 1:1 的像素放大 16%，浏览器只能插值。
+**动画要放大，图就得先有富余可放。**
+
+**怎么办**　按公式准备图，别拍脑袋定一个数：
+
+```
+目标尺寸 = 屏幕物理尺寸 × 动画最大 scale
+```
+
+以 19.5:9 的 1290×2796 屏、`scale(1.04) → scale(1.16)` 为例：
+
+```
+1290 × 1.16 = 1496  → 取 1500
+2796 × 1.16 = 3243  → 取 3250
+```
+
+验算：1500 宽的图 `cover` 进 1290，先缩小到 0.86；动画推到 1.16 时净值 0.86 × 1.16 = 0.998
+——始终 ≤ 1，一个像素都没被拉伸。
+
+你的动画幅度不是 1.16 就换个数代进去：只推到 1.08，1290 × 1.08 ≈ 1400 宽就够；
+`prefers-reduced-motion` 那一档不推近，1290 原尺寸就行。
+**先定动画幅度，再算图的尺寸**，反过来一定会有一档是糊的。
+
+（比例也得对。比例不对时 `cover` 会先按高度撑满再左右裁掉，有效像素还要再打一次折——
+AI-GUIDE §2 有一张不同比例的对照表。）
+
+### 坑 3：照片放大了，但看不出放大
+
+**症状**　卡片上那排竖条照片，鼠标划过去确实变宽变高了，可就是没有"跳出来"的感觉，
+像在原地鼓了一下。
+
+**根因**　容器高度正好等于放大后的高度。放大后的那张被容器上下卡死，
+等于在一个刚好装得下它的盒子里长大——没有任何一块地方是它"顶出来"的。**放大要有地方长。**
+
+**怎么办**　三件事一起做：
+
+- **容器留余量。** 例：静止 188、放大到 276，容器给 284。多出来那几个像素就是"顶出来"的空间。
+- **左右溢出是刻意的。** 整排变宽之后必然比卡片宽，最边上那张被卡片边缘切掉半张——
+  这是要的效果（暗示"还有更多"），不是 bug，别加 `overflow: hidden` 把它裁齐。
+  （参考实现里磁吸模式下 `.mc-row` 是 `overflow: visible`，注释写了原因：
+  设成 `auto` 的话，鼠标一划过就同时触发横向滚动，照片会在指针底下自己跑掉。）
+- **同步加重阴影 + 抬 `z-index`。** 几十个像素的尺寸变化，眼睛其实不太吃；
+  "浮起来"是靠影子说话的。放大的同时把 `box-shadow` 加深加长、`z-index` 抬到相邻几张之上，
+  让它真的压在别人上面。
+
+### 坑 4：音乐和念白一起响，两边都听不清
+
+**症状**　背景音乐正放着，念白开口，两条声音同一个音量往上顶，谁也听不清。
+
+**根因**　没做 ducking。
+
+**怎么办**　念白开口把音乐压到约 0.3，念完拉回 1.0。音乐**全程不停**，只是变小：
+
+```js
+gain.gain.setTargetAtTime(narrating ? 0.3 : 1.0, ctx.currentTime, 0.12);
+```
+
+用 `setTargetAtTime` 而不是直接赋值——直接赋值是一刀切下去，会有可闻的咔哒声；
+第三个参数是时间常数，0.12 秒左右过渡听着最自然。
+
+顺带把两件相关的事说清楚：
+
+- **本项目不带任何音源。** 音乐是数据里给的一个地址（`audio.url`），或者你自己合成一段
+  （参考实现为了断网能跑，就是当场用 Web Audio 合成的）。放什么、版权怎么办，是接入方的事。
+- **旁白语音是可选的。** 配了 TTS 就是逐字念白 + 真人声配音；不配就是纯打字机动画，
+  功能一点不缺——打字机负责视觉节奏，语音只是再加一层。真接了 TTS 就让两边同源：
+  要么用朗读的 boundary 事件驱动打字，要么按同一段文本各算各的时长，
+  别一边念完了另一边还在打。
+- iOS 上 `<audio>.volume = 0.3` 是**静默无效**的（不报错也不生效），
+  ducking 只有走 `GainNode` 才真的管用。见 SPEC §6.4。
+
+### 坑 5：照片该按谁的屏幕准备
+
+**症状**　按自己那台机器调好的图，换一台手机就要么糊、要么构图被裁掉一块。
+
+**根因**　硬编码了某个机型的尺寸。
+
+**怎么办**　别在文档或提示词里钉死一个机型。1290×2796（19.5:9）是覆盖绝大多数现役手机的
+通用默认值，够用就用它。
+
+但照片如果是让 AI 去找、去裁的，**明确告诉 AI：可以先问一句"你用什么手机"，
+或者让对方随手截一张图看尺寸，按真实的屏来算**，再代进[坑 2](#坑-2加了-ken-burns照片变糊了)的公式。
+多问这一句的成本，比六张图全部重来低得多。
+
+### 坑 6：卡片底下那行小字，是别人写的话
+
+**症状**　接进去跑起来，卡片底部那行斜体小字还是参考实现里带的那句——
+跟你的产品、你的角色一点关系都没有，而且每一趟都一样。
+
+**根因**　把示例文案当成了默认值。
+
+**怎么办**　**数据优先，配置兜底**：
+
+```js
+// journey 数据里可以带一个可选的 hint —— AI 每建一趟自己写一句，跟着那趟的情绪走
+const hint = journey.hint || CONFIG.cardHint;
+```
+
+```js
+// CONFIG 里那一行只是数据没给时的兜底 —— 写你们自己的话
+cardHint: "……",
+```
+
+`hint` 是可选字段，后端不校验、不生成，原样存原样返回（跟 `year` / `date` 一样是纯展示文本）。
+让 AI 每趟写一句才是这个字段存在的意义——六张照片的气质每趟都不一样，
+底下那句跟着变才对味；一句写死的口号翻到第三趟就废了。
+
+### 另外三条在 SPEC 里
+
+- **两张表的 `position` 方向是反的**：journey 取 `MIN - 1`（新的排前面），
+  stop 取 `MAX + 1`（按走的顺序递增）。照抄时最容易搞混。SPEC §3。
+- **跨域音频不设 `crossOrigin = "anonymous"` 会静音，而且不报错。** SPEC §6.4。
+- **iOS 上 `AudioContext` 必须在用户手势的同步调用栈里 `new` + `resume()`**，
+  时机是"打开故事页"那一次点击，不是等用户点播放键。SPEC §6.4。
+
+---
+
+## 7. 接完之后自检
+
+- [ ] 浮层是挂在 `document.body` 下的，不是嵌在聊天气泡里
+- [ ] 宿主页面里打开浮层，四个边都顶到屏幕边缘（没被祖先的 `transform` 收进笼子）
+- [ ] 关掉浮层，音乐停了，定时器断了，body 的滚动恢复了
+- [ ] 打开浮层立刻关掉、再立刻打开，第二次照样能自动播（在途的异步回调认的是"此刻"的会话）
+- [ ] 长 note（六句以上）压在亮照片上，**文字底下没有灰板**，收起态和展开态都没有
+- [ ] 照片按"屏幕物理尺寸 × 动画最大 scale"备的，推到最近那一帧不糊
+- [ ] 磁力轮播放大时能看出"浮起来"，最边上那张被卡片切掉半张（这是对的）
+- [ ] 念白开口时音乐降下去了，念完拉回来了，中间没有咔哒声
+- [ ] `audio` 给 `null` 时播放器不渲染，故事页其余部分正常
+- [ ] 卡片底下那行小字来自 `journey.hint`，没有 hint 才用你自己写的兜底
+- [ ] 类名全带前缀，没有把 `* { box-sizing }` 和 `body {}` 抄进宿主
+
+
+==================================================================
+FILE 3/6 — SPEC.md
+==================================================================
+
+# Journey Cards · 设计规格
+
+一次"旅行"= 一个目的地 + 6 处停留，每处一张竖屏照片和一段第一人称的话，整趟配一首曲子。
+在聊天流里它是一张卡片；点开是全屏照片故事：照片铺满、地名在顶部、那段话落在左下角、底部一个播放器和 6 个圆点。
+
+这份文档描述**后端契约**：两张表、一组 REST 接口、照片/音频怎么存。前端可以自己写，
+只要按这里的字段读数据就行（`examples/` 下的参考 UI 就是照这份规格写的）。
+
+不依赖任何特定运行时。原始实现跑在 Cloudflare Workers + D1 + KV 上，所以文中会拿它举例，
+但接口里没有一处是 Workers 专有的——SQLite / Postgres + 任意对象存储都能一比一实现。
+
+---
+
+## 目录
+
+1. [概念模型](#1-概念模型)
+2. [数据模型](#2-数据模型)
+3. [排序与 position 规则](#3-排序与-position-规则)
+4. [REST 接口全集](#4-rest-接口全集)
+5. [照片存储](#5-照片存储)
+6. [音频字段](#6-音频字段)
+7. [前端消费契约](#7-前端消费契约)（含[渲染侧的硬约束](#渲染侧的硬约束)）
+8. [错误处理](#8-错误处理)
+9. [鉴权](#9-鉴权)
+10. [卡片标签协议](#10-卡片标签协议可选)
+11. [实现顺序建议](#11-实现顺序建议)
+12. [明确不做的事](#12-明确不做的事)
+
+---
+
+## 1. 概念模型
+
+```
+journey（一趟）
+├── title / titleEn / year        标题：目的地名 + 副标题 + 年份（纯文本）
+├── cover                         封面照片（第一处的照片自动回填）
+├── hint                          卡片底下那行小字（可选，每趟一句）
+├── audio                         整趟一首曲子（不是每处一首）
+└── stops[]（若干处，约定 6 处）
+     ├── place / placeEn / date   地名 + 副标题 + 日期（纯文本）
+     ├── src                      竖屏照片
+     └── note                     第一人称的一段话，故事页正文
+```
+
+三条设计约定，写在前面，因为它们决定了下面所有字段的形状：
+
+- **6 处是约定不是约束。** 数据库、接口都不限制数量。6 是"一屏能翻完、又足够成一趟"的经验值，
+  底部圆点也是照 6 个排的。你写 3 处或 9 处都能跑，只是 UI 要自己看着办。
+- **`year` / `date` 是纯文本，不是日期类型。** 存 `"2025"` 和 `"2025.03.16"`，不做校验、不做时区换算。
+  这是故意的：这些字段只用来显示，从来不参与排序或筛选。真要排序用 `position` 和 `created_at`。
+- **曲子挂在 journey 上，不挂在 stop 上。** 故事页从第一处放到最后一处，中间不换歌。
+  （早期实现两张表上都有一套 `song_*` 字段，stop 级的那套是历史包袱，这份规格里已经删掉了。）
+
+命名上有一处要先说清，免得后面来回对照，三个地方三个名字，**都不是笔误**：
+
+| 在哪 | 叫什么 |
+|---|---|
+| 数据库列 | `song_url` / `song_title` / … |
+| 响应里的对象 | `audio`（参考实现同时给一个 `song` 别名指向同一对象，只为兼容老前端；**新写的前端只认 `audio`**） |
+| 上传 / 读取端点 | `/api/journeys/audio` |
+
+列名是历史形状，改起来要动迁移，不值；响应字段用中立的 `audio`，因为它可能只是一段环境音，不一定是"歌"。
+
+---
+
+## 2. 数据模型
+
+### 2.1 `journeys`
+
+| 列 | 类型 | 必填 | 默认 | 说明 |
+|---|---|:--:|---|---|
+| `id` | TEXT PK | ✅ | — | `j_` + 时间戳 base36 + `_` + 5 位随机。见下方 [ID 生成](#23-id-生成) |
+| `title` | TEXT | ✅ | — | 主标题，通常是目的地名 |
+| `title_en` | TEXT | | `''` | 副标题 / 外文名，纯展示 |
+| `year` | TEXT | ✅ | 当前年份 | **纯文本**，不是数字 |
+| `cover` | TEXT | | `''` | 封面：完整 URL 或 `kv:<key>`。第一个带照片的 stop 会自动回填 |
+| `hint` | TEXT | | `''` | 卡片底下那行小字。**每趟一句，建议由建这趟的人（或 AI）自己写**，跟着这趟的情绪走。空则前端回落到自己的默认文案，见 [第 7 节](#7-前端消费契约) |
+| `song_url` | TEXT | | NULL | 音频地址：完整 URL 或 `kv:<key>`。详见 [第 6 节](#6-音频字段) |
+| `song_title` | TEXT | | NULL | 曲名 |
+| `song_artist` | TEXT | | NULL | 演奏 / 演唱者 |
+| `song_cover` | TEXT | | NULL | 可选：封面图 URL 或 `kv:<key>` |
+| `song_dur` | INTEGER | | NULL | 秒。**仅用于元数据加载完成前的占位显示** |
+| `song_hue` | INTEGER | | NULL | 0–360，播放器主色调。渲染缺省 `32`（暖橙） |
+| `position` | INTEGER | ✅ | 0 | 排序值，**越小越靠前**。见[第 3 节](#3-排序与-position-规则) |
+| `created_at` | INTEGER | ✅ | — | 毫秒时间戳 |
+| `updated_at` | INTEGER | ✅ | — | 毫秒时间戳 |
+
+### 2.2 `journey_stops`
+
+| 列 | 类型 | 必填 | 默认 | 说明 |
+|---|---|:--:|---|---|
+| `id` | TEXT PK | ✅ | — | `s_` + 时间戳 base36 + `_` + 5 位随机 |
+| `journey_id` | TEXT FK | ✅ | — | → `journeys.id` |
+| `place` | TEXT | ✅ | — | 地名 |
+| `place_en` | TEXT | | `''` | 外文地名，纯展示 |
+| `date` | TEXT | | `''` | **纯文本**，建议 `2025.03.16`，不校验 |
+| `src` | TEXT | | `''` | 照片：完整 URL 或 `kv:<key>` |
+| `note` | TEXT | | `''` | 第一人称的一段话。**这是故事页最主要的内容**，可以很长（几百字） |
+| `position` | INTEGER | ✅ | 0 | 该趟内的顺序，**越小越靠前**，从 0 递增 |
+| `created_at` | INTEGER | ✅ | — | 毫秒时间戳 |
+| `updated_at` | INTEGER | ✅ | — | 毫秒时间戳 |
+
+`note` 不设长度上限。TEXT 在 SQLite 里没有实际上限，Postgres 用 `text`，MySQL 必须用 `TEXT`/`MEDIUMTEXT`，
+**不要用 `VARCHAR(255)`**——这段话动辄两三百字，中文一字三字节，255 会截。
+
+### 2.3 ID 生成
+
+```js
+const jid = "j_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+// → j_m9xk2p3_a3f9c
+```
+
+前缀（`j_` / `s_` / 照片 `jp_` / 音频 `ja_`）有两个作用：一是看日志时一眼认得出，
+二是**跟静态路径段区分得开**。
+
+真正会撞车的是这两组同形路径：
+
+```
+/api/journeys/upload     ↔  /api/journeys/:id      （都是"/api/journeys/ 加一段"）
+/api/journeys/audio      ↔  /api/journeys/:id
+/api/journeys/stops/:id  ↔  /api/journeys/:id/stops（都是"加两段"）
+```
+
+它们能共存靠两件事，缺一不可：
+
+1. **静态路径写在 `:id` 之前**。匹配是自上而下的，`/api/journeys/upload` 一旦落到 `:id` 那条，
+   就会被当成一个 id 为 `upload` 的 journey。
+2. **`:id` 上挡一层保留字**（`upload` / `audio` / `photo` / `stops` / `reorder`）。
+   光靠方法区分（upload 是 POST、单趟是 PATCH/DELETE）也能跑，但哪天给单趟加个 POST 就会翻车。
+
+**如果你改了 id 生成规则（比如换成 UUID 或自增数字），必须重新审一遍路由匹配顺序**，或者干脆
+把静态路径挪到 `/api/journeys/_upload` 这种不会碰撞的形式。
+
+### 2.4 建表 SQL（SQLite / D1）
+
+```sql
+CREATE TABLE IF NOT EXISTS journeys (
+  id           TEXT    PRIMARY KEY,
+  title        TEXT    NOT NULL,
+  title_en     TEXT    NOT NULL DEFAULT '',
+  year         TEXT    NOT NULL,
+  cover        TEXT    NOT NULL DEFAULT '',
+  hint         TEXT    NOT NULL DEFAULT '',   -- 卡片底下那行小字，可选
+  song_url     TEXT,
+  song_title   TEXT,
+  song_artist  TEXT,
+  song_cover   TEXT,
+  song_dur     INTEGER,
+  song_hue     INTEGER,
+  position     INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journeys_order
+  ON journeys (position ASC, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS journey_stops (
+  id          TEXT    PRIMARY KEY,
+  journey_id  TEXT    NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+  place       TEXT    NOT NULL,
+  place_en    TEXT    NOT NULL DEFAULT '',
+  date        TEXT    NOT NULL DEFAULT '',
+  src         TEXT    NOT NULL DEFAULT '',
+  note        TEXT    NOT NULL DEFAULT '',
+  position    INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jstops_journey
+  ON journey_stops (journey_id, position ASC, created_at ASC);
+```
+
+> ⚠️ **`ON DELETE CASCADE` 在 D1 上默认不生效。** SQLite 的外键约束要 `PRAGMA foreign_keys = ON`
+> 才启用，而 D1 默认是关的、也不允许你在连接上随便开。所以删一趟必须**手动两步删**
+> （先 stops 后 journey，见 [4.5](#45-delete-apijourneysid)）。
+> 换成 Postgres / MySQL 时 CASCADE 是真生效的，那段手动删可以简化，但**别默认它一定会跑**——
+> 先在你的库上验一次。
+
+其他数据库的差异只有类型名：`INTEGER` 时间戳在 Postgres 上用 `bigint`，`TEXT` 保持 `text`。
+不要把时间戳换成 `timestamptz`——接口约定就是毫秒整数，换了要在两头都做转换，不值。
+
+---
+
+## 3. 排序与 position 规则
+
+**两张表的 position 方向是反的。这是全套规格里最容易抄错的一处。**
+
+| | 新建时取值 | 效果 | 列表排序 |
+|---|---|---|---|
+| `journeys` | `MIN(position) - 1` | 一路往**负数**走，最新的一趟排最前 | `ORDER BY position ASC, created_at DESC` |
+| `journey_stops` | `MAX(position) + 1`（同一趟内） | 从 **0 递增**，新的一处接在末尾 | `ORDER BY position ASC, created_at ASC` |
+
+两边都是 `ORDER BY position ASC`，但语义相反：journey 的"最前"是最新，stop 的"最前"是最早。
+
+```
+journeys（先后建了三趟）        journey_stops（同一趟里加了三处）
+  position  -3  第三趟 ←最新     position  0  第一处 ←最先
+            -2  第二趟                     1  第二处
+            -1  第一趟                     2  第三处 ←最后加
+```
+
+具体取值：
+
+```sql
+-- 新 journey
+SELECT MIN(position) AS p FROM journeys;              -- 空表 → NULL
+-- position = (p ?? 0) - 1                            -- 第一趟是 -1
+
+-- 新 stop
+SELECT MAX(position) AS p FROM journey_stops WHERE journey_id = ?;   -- 空 → NULL
+-- position = (p ?? -1) + 1                           -- 第一处是 0
+```
+
+三条附带的坑：
+
+- **删中间一处会留下空洞**（0,1,3,4）。不影响显示顺序，但下一次新增会接在 `MAX+1`、序号跳号。
+  如果你在意连续性，删完重排一遍；不在意就别管，`ORDER BY` 不看空洞。
+- **改顺序只能逐条 PATCH `position`。** 基础接口里没有批量重排。要做拖拽排序，
+  建议自己补一个 `PATCH /api/journeys/:id/stops/reorder`，body `{"order":["s_a","s_b","s_c"]}`，
+  服务端按数组下标重写 position（见 [4.11](#411-可选补充接口)）。
+- **列表接口默认不返回 stop 的 `position`。** 只做展示的前端不需要它（数组顺序已经对了），
+  但做编辑器就必须要。这份规格里已把它加进响应，见 [4.1](#41-get-apijourneys)。
+
+---
+
+## 4. REST 接口全集
+
+所有 JSON 响应统一：
+
+```
+content-type: application/json; charset=utf-8
+cache-control: no-store, no-cache, must-revalidate
+```
+
+唯一例外是照片 / 音频读取端点，返回裸二进制（见 [第 5](#5-照片存储)、[第 6 节](#6-音频字段)）。
+
+所有路径参数（journey id / stop id / 存储 key）先过一遍 `^[\w-]+$`，不匹配直接 400。
+**照片和音频端点还要额外校验前缀**（`^jp_` / `^ja_`），理由见 [5.4](#54-读取端点的安全模型)。
+
+### 4.0 接口总表
+
+| # | 方法 | 路径 | 鉴权 | 说明 |
+|:--:|---|---|:--:|---|
+| 1 | GET | `/api/journeys` | ✅ | 列出全部 journey，内嵌全部 stops |
+| 2 | GET | `/api/journeys/:id` | ✅ | 取单趟 |
+| 3 | POST | `/api/journeys` | ✅ | 建一趟 |
+| 4 | PATCH | `/api/journeys/:id` | ✅ | 改一趟（部分字段） |
+| 5 | DELETE | `/api/journeys/:id` | ✅ | 删一趟（连带 stops 和它们的照片） |
+| 6 | POST | `/api/journeys/:id/stops` | ✅ | 给某趟加一处，自动追加到末尾 |
+| 7 | PATCH | `/api/journeys/stops/:stopId` | ✅ | 改一处 |
+| 8 | DELETE | `/api/journeys/stops/:stopId` | ✅ | 删一处 |
+| 9 | POST | `/api/journeys/upload` | ✅ | 上传照片（base64）→ 对象存储 |
+| 10 | GET | `/api/journeys/photo/:key` | ❌ 公开 | 读照片二进制 |
+| 11 | POST | `/api/journeys/audio` | ✅ | 上传音频（base64） |
+| 12 | GET | `/api/journeys/audio/:key` | ❌ 公开 | 读音频，**必须支持 Range** |
+
+注意 #7 #8 的路径是 `/api/journeys/stops/:stopId`，**不带 journey id**。stop id 全局唯一，
+不需要父级定位；这样前端拿到 stop 就能直接改，不用同时记着它属于哪一趟。
+
+请求体字段**同时接受 camelCase 和 snake_case**（`titleEn` 或 `title_en` 都行），响应一律 camelCase。
+这在实现上就是 `b.titleEn ?? b.title_en`，两行代码，省掉接入方一半的调试时间——建议照做。
+
+---
+
+### 4.1 `GET /api/journeys`
+
+无参数。返回全部 journey，每个内嵌它的全部 stops。
+
+实现是两条 SQL：先查全部 journeys，再用 `WHERE journey_id IN (?,?,…)` 一把捞出所有 stops，
+在内存里按 `journey_id` 分组。**不要在循环里逐趟查 stops**（N+1）。
+
+> ⚠️ **`IN (?,?,…)` 的绑定参数个数有上限。** D1 是每条语句 100 个，SQLite 默认
+> `SQLITE_MAX_VARIABLE_NUMBER` 是 999（新版 32766）。趟数超过上限时这条 SQL 会直接报错，
+> 而不是慢——所以要么把 id 分批（每批 ≤ 90）查完再合并，要么改成 `JOIN journeys` 子查询。
+> 趟数少的时候看不出来，一旦攒够就是整个列表接口 500。
+>
+> **参考实现没做分批**，是一把 `IN` 全塞进去的。它在 D1 上大约撑到 100 趟；
+> 在意的话自己补分批，或者前端一律带 `?limit=`（参考实现把 limit 上限钉在 200，
+> 所以带了 limit 也别超过绑定数上限）。
+
+**200：**
+
+```json
+{
+  "journeys": [
+    {
+      "id": "j_m9xk2p3_a3f9c",
+      "title": "新西兰",
+      "titleEn": "New Zealand",
+      "year": "2025",
+      "cover": "/api/journeys/photo/jp_m9xk2q1_c81af9",
+      "hint": "南半球的秋天，从一片湖开始。",
+      "position": -3,
+      "createdAt": 1753672345678,
+      "updatedAt": 1753672399999,
+      "audio": {
+        "url": "/api/journeys/audio/ja_m9xk2p9_71bd3e",
+        "title": "Long Way North",
+        "artist": "—",
+        "cover": null,
+        "dur": 214,
+        "hue": 32
+      },
+      "stops": [
+        {
+          "id": "s_m9xk2q1_b7e2d",
+          "place": "蒂卡波湖",
+          "placeEn": "Lake Tekapo",
+          "date": "2025.03.14",
+          "src": "/api/journeys/photo/jp_m9xk2q1_c81af9",
+          "note": "到的时候刚过四点。风把湖面吹成一块起雾的玻璃，蓝得不像真的……",
+          "position": 0,
+          "createdAt": 1753672350000,
+          "updatedAt": 1753672350000
+        }
+      ]
+    }
+  ],
+  "total": 3
+}
+```
+
+> 参考实现在 `audio` 之外还会给一个同值的 `song` 键（老前端的别名），上面没列。新代码只读 `audio`。
+> `total` 是 journey 总数（不受 `limit` 影响），分页见本节末尾。
+
+**字段映射规则**（照抄级细节，前端的判空逻辑依赖它们）：
+
+| DB 列 | 响应字段 | 转换 |
+|---|---|---|
+| `title_en` / `place_en` | `titleEn` / `placeEn` | snake → camel |
+| `created_at` / `updated_at` | `createdAt` / `updatedAt` | 原样（毫秒整数） |
+| `cover` | `cover` | `kv:xxx` → `/api/journeys/photo/xxx`；否则原样；**空 → `""` 或 `null`，见下** |
+| `hint` | `hint` | 原样（空就给 `""`，前端自己回落到默认文案） |
+| `src` | `src` | 同 `cover`，但**空 → `null`** |
+| `song_url` | `audio.url` | 同上（走 `/api/journeys/audio/`）；空 → `null` |
+| `song_*` 六列 | `audio` 对象 | 见下 |
+| `journey_id`（stop） | `journeyId` | 列表接口里可以省（已嵌在父对象里）；参考实现一律返回，省不省都不影响前端 |
+
+> ⚠️ **`cover` 空是 `""` 还是 `null`，两种实现都在跑。** 原实现是 `cover` 空给 `""`、`src` 空给 `null`，
+> 这个不对称纯粹是历史遗留；本仓库的参考实现（`examples/worker.js`）统一成了 `null`。
+> 两种都合法，但**前端判空务必两种都处理**：写 `if (!x)`，别写 `if (x === null)`。
+
+**`audio` 对象的组装：**
+
+```js
+audio: (r.song_url || r.song_title)
+  ? {
+      url:    r.song_url ? resolveKv(r.song_url, "/api/journeys/audio/") : null,
+      title:  r.song_title  || "",
+      artist: r.song_artist || "",
+      cover:  r.song_cover ? resolveKv(r.song_cover, "/api/journeys/photo/") : null,
+      dur:    r.song_dur ?? 210,
+      hue:    r.song_hue ?? 32,
+    }
+  : null
+```
+
+> ⚠️ **判空条件是 `song_url || song_title`，两个都空才算没有。** 允许"只有曲名没有音频文件"的
+> 纯展示态（播放器显示曲名但播放键 disabled）。原实现只看曲名，导致"只填了音频地址没填曲名"的
+> 数据会被前端当成没歌、播放器整个不渲染——这是个真实踩过的坑。
+>
+> `dur` 缺省 210、`hue` 缺省 32 **在后端兜一次就够**，前端别再兜第二遍。两处兜底最后一定会漂。
+
+**错误**：`401`
+
+**分页**：基础契约里没有，默认全量返回。几十趟以内没问题（一趟带 6 个 stop，一条 `note` 几百字，
+单趟 JSON 约 3–5 KB，50 趟约 200 KB）。上百趟之后建议加
+`?limit=&offset=`，并支持 `?stops=0` 只返回 journey 头不带 stops——列表页其实只用得到 `cover` 和 `title`。
+参考实现（`examples/worker.js`）这三个参数都收了，并在响应里多给一个 `total`（journey 总数，
+不受 limit 影响）；不传参数时行为跟基础契约完全一致。
+
+---
+
+### 4.2 `GET /api/journeys/:id`
+
+取单趟，响应体是 [4.1](#41-get-apijourneys) 里 `journeys[]` 的单个元素（**不套 `journeys` 数组**）：
+
+```json
+{ "journey": { "id": "j_m9xk2p3_a3f9c", "title": "新西兰", "…": "…", "stops": [] } }
+```
+
+**错误**：`400 BAD_ID` · `404 NOT_FOUND` · `401`
+
+原实现里没有这个接口，前端拿单趟靠"拉全量再 `.find()`"。趟数一多就是纯浪费，
+**建议一开始就实现它**——卡片渲染和故事页都只需要一趟。参考实现里已经有了。
+
+---
+
+### 4.3 `POST /api/journeys`
+
+| 字段 | 类型 | 必填 | 默认 | 处理 |
+|---|---|:--:|---|---|
+| `title` | string | ✅ | — | `.trim()`，空 → 400 |
+| `titleEn` / `title_en` | string | | `""` | `.trim()` |
+| `year` | string | | 当前年份 | `.trim()` |
+| `cover` | string | | `""` | `.trim()`，完整 URL 或 `kv:<key>` |
+| `hint` | string | | `""` | `.trim()`，卡片底下那行小字，一句话 |
+| `songUrl` / `song_url` | string | | `null` | `.trim() \|\| null` |
+| `songTitle` / `song_title` | string | | `null` | 同上 |
+| `songArtist` / `song_artist` | string | | `null` | 同上 |
+| `songCover` / `song_cover` | string | | `null` | 同上 |
+| `songDur` / `song_dur` | number | | `null` | 建议 `parseInt` 后再入库 |
+| `songHue` / `song_hue` | number | | `null` | 同上，建议 clamp 到 0–360 |
+
+`cover` 通常**不用传**——第一次 POST 带 `src` 的 stop 时会自动回填（见 [4.6](#46-post-apijourneysidstops)）。
+
+`song*` 那几个字段，参考实现同时收 `audio*` 拼法（`audioUrl` / `audio_url` / `audioTitle` / …），
+指向同一批列。响应字段叫 `audio`，写入时用哪个名字都行，不用记两套。
+
+> ⚠️ **`year` 的默认值要用本地时区。** 服务端（尤其是 Workers / Lambda）跑在 UTC 上，
+> `new Date().getFullYear()` 在跨年那几个小时会给出错误年份。要么按配置的时区算，
+> 要么干脆把 `year` 设成必填。
+
+```bash
+curl -XPOST "$HOST/api/journeys" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"title":"新西兰","title_en":"New Zealand","year":"2025",
+       "hint":"南半球的秋天，从一片湖开始。",
+       "song_title":"Long Way North","song_artist":"—",
+       "song_dur":214,"song_hue":32}'
+```
+
+**200**：`{"id":"j_m9xk2p3_a3f9c","ok":true}`
+**错误**：`400 TITLE_REQUIRED` · `401`
+
+---
+
+### 4.4 `PATCH /api/journeys/:id`
+
+部分更新。**只写 body 里 `!== undefined` 的字段**——传 `null` 也算"要改成空"，
+和"没传"是两回事。可改：`title`（空 → 400）、`titleEn`、`year`、`cover`、`hint`、
+`songUrl` / `songTitle` / `songArtist` / `songCover` / `songDur` / `songHue`、`position`。
+
+`updated_at` 每次自动刷成当前时间。
+
+`position` 建议 `Number.isInteger(x) ? x : 400 BAD_POSITION`。
+参考实现这里还是 `parseInt(x) ?? 0`，传 `"abc"` 会**静默变成 0**，把这一趟弹到列表中间——
+知道就好，自己写的时候把这层校验补上。
+
+**200**：`{"ok":true}`
+**错误**：`400 BAD_ID` · `400 TITLE_REQUIRED` · `400 NO_FIELDS`（一个可识别字段都没有） · `404 NOT_FOUND` · `401`
+（自己加了 position 校验就再多一个 `400 BAD_POSITION`）
+
+> 404 的判据是 UPDATE 影响行数为 0。**SQLite（含 D1 的 `meta.changes`）算的是匹配到的行数**
+> ——值没变也算 1，所以这个判据成立；**Postgres 的 `rowCount` 同样是匹配行数**，也没问题。
+> **MySQL 是例外**：`affected_rows` 默认返回的是**实际变更行数**，把一趟改成跟原来一模一样的值
+> 会返回 0，于是接口误报 404。MySQL 上要么连接时开 `CLIENT_FOUND_ROWS`，要么先 SELECT 再 UPDATE。
+
+---
+
+### 4.5 `DELETE /api/journeys/:id`
+
+无请求体。**顺序有讲究**：
+
+```js
+// 1. 先把要清的存储 key 收集出来（删完就查不到了）
+const keys = await collectStorageKeys(journeyId);   // stops.src + journey.cover + song_url/song_cover 里的 kv:
+// 2. 事务里删两张表
+await tx(async () => {
+  await db.run("DELETE FROM journey_stops WHERE journey_id = ?", journeyId);
+  const r = await db.run("DELETE FROM journeys WHERE id = ?", journeyId);
+  if (!r.changes) throw new NotFound();
+});
+// 3. 事务提交后再删对象存储（失败只记日志，不回滚数据库）
+await Promise.allSettled(keys.map(k => storage.delete(k)));
+```
+
+**两件必须做对的事**（原实现两件都没做，这里是修正后的形态）：
+
+1. **必须是事务。** 不然 journey 不存在时，会先把（其实并不存在的）stops 删掉才返回 404；
+   更糟的是删 stops 成功、删 journey 失败，留下一趟没有内容的空壳。
+   如果你的运行时没有事务（早期 D1 的 HTTP 模式就没有），至少**先确认 journey 存在再动 stops**。
+2. **必须清对象存储。** 不清就是每删一趟漏一批照片，永久堆积、永远不会有人回收。
+   注意 `cover` 通常和某个 stop 的 `src` 指向同一个 key，去重后再删；
+   **删之前再查一次"还有没有别的行在引用它"**（`journeys.cover / song_url / song_cover` 加
+   `journey_stops.src` 四列都要查），否则两趟共用一张图时会误删。参考实现里这一步是 `releaseAsset()`
+   ——它只查了前三列，`song_cover` 漏在外面，自己抄的时候顺手补上。
+
+**200**：`{"ok":true}`
+**错误**：`400 BAD_ID` · `404 NOT_FOUND` · `401`
+
+---
+
+### 4.6 `POST /api/journeys/:id/stops`
+
+**先校验父 journey 存在**（`SELECT id FROM journeys WHERE id = ?`），不存在直接 404，别插孤儿行。
+
+| 字段 | 类型 | 必填 | 默认 |
+|---|---|:--:|---|
+| `place` | string | ✅ | — |
+| `placeEn` / `place_en` | string | | `""` |
+| `date` | string | | `""` |
+| `src` | string | | `""`（完整 URL 或 `kv:<key>`） |
+| `note` | string | | `""` |
+
+`position = MAX(position) + 1`（该 journey 内，空则 0）。
+
+**两个自动副作用，都要保留：**
+
+1. **封面回填**：如果传了 `src` **且**父 journey 的 `cover` 为空 → 把这张图设成封面。
+   漏掉这条，封面就永远是空的（因为没人会专门去 PATCH 它）。
+2. **刷父级时间**：无论如何都把父 journey 的 `updated_at` 刷成当前时间。
+
+```bash
+curl -XPOST "$HOST/api/journeys/j_m9xk2p3_a3f9c/stops" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"place":"蒂卡波湖","place_en":"Lake Tekapo","date":"2025.03.14",
+       "src":"kv:jp_m9xk2q1_c81af",
+       "note":"到的时候刚过四点。风把湖面吹成一块起雾的玻璃，蓝得不像真的……"}'
+```
+
+**200**：`{"id":"s_m9xk2q1_b7e2d","ok":true}`
+**错误**：`400 BAD_ID` · `404 NOT_FOUND`（父 journey 不存在） · `400 PLACE_REQUIRED` · `401`
+
+---
+
+### 4.7 `PATCH /api/journeys/stops/:stopId`
+
+可改：`place`（空 → 400）、`placeEn`、`date`、`src`、`note`、`position`。stop 自己的 `updated_at` 自动刷新。
+
+> ⚠️ 原实现在这里**不刷父 journey 的 `updated_at`**，也不会因为改了 `src` 去更新封面——
+> 和 [4.6](#46-post-apijourneysidstops) 的行为不对称。**要补齐**：改任何 stop 都刷父级
+> `updated_at`（否则前端按 `updatedAt` 排序 / 做缓存失效会漏掉编辑过的趟），
+> 父级 `cover` 为空、或者封面正好是被换掉那张时，同样跟着换。
+> 参考实现已经补齐了，顺带把换下来的旧图交给 `releaseAsset()` 回收。
+
+**200**：`{"ok":true}`
+**错误**：`400 BAD_ID` · `400 PLACE_REQUIRED` · `400 NO_FIELDS` · `404 NOT_FOUND` · `401`
+
+---
+
+### 4.8 `DELETE /api/journeys/stops/:stopId`
+
+无请求体。删除前把 `src` 里的 `kv:` key 收出来一并删掉（同 [4.5](#45-delete-apijourneysid)）。
+**如果这张图正好是父 journey 的 `cover`，要把 `cover` 一起清空或改成下一处的图**，
+否则封面会指向一个已删除的 key（404 图裂）。同时刷父级 `updated_at`。
+
+不重排剩下 stops 的 position，留空洞是可接受的（见[第 3 节](#3-排序与-position-规则)）。
+
+**200**：`{"ok":true}`
+**错误**：`400 BAD_ID` · `404 NOT_FOUND` · `401`
+
+---
+
+### 4.9 `POST /api/journeys/upload`
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|:--:|---|
+| `src_data` / `srcData` | string | ✅ | base64。**服务端要能容忍 `data:` 前缀** |
+| `mime` | string | | 默认 `image/jpeg`，随对象一起存 |
+
+参考实现还收第二种传法：**裸二进制 body + `content-type: image/jpeg`**。浏览器端直接
+`fetch(url, {method:"POST", body: file})` 就行，省掉一次 base64 编码和服务端的解码 CPU。
+JSON 那条路是给脚本和 AI 用的（它们手里往往只有 base64 字符串）。
+
+```js
+// 1. 剥 data URL 前缀，顺便把 mime 读出来（调用方经常忘了剥）
+const m = /^data:([^;]+);base64,/.exec(raw);
+const mime = b.mime || m?.[1] || "image/jpeg";
+const b64  = raw.replace(/^data:[^;]+;base64,/, "");
+
+// 2. 尺寸闸门（判 base64 长度，不判解码后字节数：早点拦，别先解码再拒）
+if (b64.length > 4_000_000) return err(413, "TOO_LARGE");   // ≈ 3 MB 原图
+
+// 3. 解码要 try/catch —— 非法 base64 必须是 400，不是 500
+let bytes;
+try { bytes = decodeBase64(b64); } catch { return err(400, "BAD_BASE64"); }
+
+// 4. MIME 白名单：别让上传端点退化成通用网盘
+if (!/^image\/(jpeg|png|webp|avif|gif)$/.test(mime)) return err(400, "BAD_MIME");
+
+// 5. 存
+const key = "jp_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+await storage.put(key, bytes, { metadata: { mime, size: bytes.length, uploadedAt: Date.now() } });
+```
+
+**200**：
+
+```json
+{
+  "key": "jp_m9xk2q1_c81af9",
+  "ref": "kv:jp_m9xk2q1_c81af9",
+  "url": "/api/journeys/photo/jp_m9xk2q1_c81af9",
+  "ok": true
+}
+```
+
+三个字段是同一张图的三种写法：`url` 能直接塞进 `<img src>` 看一眼对不对，
+**但存进数据库的建议是 `ref`（也就是 `kv:<key>`）**，让列表接口去拼 URL：
+这样以后换域名、换路径前缀、换 CDN，改一行代码就行，不用迁移数据。
+
+**错误**：`400 BAD_BODY`（没给 base64 / body 空） · `400 BAD_BASE64` · `400 BAD_MIME` · `413 TOO_LARGE` · `401`
+
+> 3 MB 这个上限是自己定的，不是存储层的限制。它挡的是**服务端 CPU**：base64 解码是纯计算，
+> Workers 免费档单请求 CPU 时间只有几十毫秒，几 MB 的 base64 就能顶到超时。
+> 你的运行时更宽松就调大，但别无限制——上传端点没有背压，一个大请求能拖垮整个 worker 实例。
+
+---
+
+### 4.10 `GET /api/journeys/photo/:key`
+
+**这是不鉴权的公开端点。** 完整安全模型见 [5.4](#54-读取端点的安全模型)。
+
+```js
+if (!/^jp_[\w-]+$/.test(key)) return new Response("bad key", { status: 400 });
+const obj = await storage.get(key);
+if (!obj) return new Response("not found", { status: 404 });
+return new Response(obj.body, {
+  headers: {
+    "content-type": obj.metadata?.mime || "image/jpeg",
+    "cache-control": "public, max-age=31536000, immutable",
+  },
+});
+```
+
+- 响应是**裸二进制**，不是 JSON。错误体给 `text/plain`（`bad key` / `not found`）还是给
+  `{error, code}` JSON 都行——`<img>` 两种都读不到，随你。参考实现给的是 JSON
+  （`400 BAD_KEY` / `404 NOT_FOUND`），纯粹因为它顺手把 CORS 头一起带上了。
+- `immutable` + 一年缓存是安全的：key 由内容唯一确定，**改图必须换 key**，不存在同 key 换内容。
+- 图片不需要 Range / ETag，音频需要（见 [6.3](#63-range-请求)）。参考实现里照片和音频共用同一个
+  handler，所以照片也顺带支持了 Range 和 `HEAD`——不是必需，也不碍事。
+- 参考实现留了个开关 `REQUIRE_MEDIA_TOKEN=1`：打开之后这两个读取端点也要 token，
+  前端所有 `<img src>` 后面得补 `?token=`。**默认是关的**，理由和代价见 [5.4](#54-读取端点的安全模型)。
+
+---
+
+### 4.11 可选补充接口
+
+按需实现，基础闭环用不到：
+
+| 方法 | 路径 | 理由 | 参考实现 |
+|---|---|---|:--:|
+| PATCH | `/api/journeys/:id/stops/reorder` | body `{"order":["s_a","s_b",…]}`，按下标重写 position。做拖拽排序必备 | ✅ |
+| PATCH | `/api/journeys/reorder` | 同上，但重排的是整个列表（journey 之间的顺序） | ✅ |
+| GET | `/api/journeys/:id/stops` | 只要某趟的停留，不拉整趟 | ✅ |
+| GET | `/api/journeys/stops/:stopId` | 取单个停留，编辑页用得上 | ✅ |
+| GET | `/api/journeys?limit=&offset=&stops=0` | 分页 + 不带 stops 的轻量列表 | ✅ |
+| DELETE | `/api/journeys/photo/:key` | 手动清理孤儿图。参考实现在换图 / 删停留 / 删整趟时已经自动回收（`releaseAsset()`），正常用不到 | ❌ |
+
+标 ✅ 的是 `examples/worker.js` 里已经写好的，可以直接抄。
+
+---
+
+## 5. 照片存储
+
+### 5.1 方案
+
+**对象存储 + 数据库只存 key。** 每张照片是对象存储里的一个对象，
+key 形如 `jp_<ts36>_<rand6>`，数据库里存 `kv:jp_xxx`，列表接口拼成 `/api/journeys/photo/jp_xxx`。
+
+原实现用的是 Cloudflare KV。任何对象存储都行——S3、R2、MinIO、甚至本地目录，
+接口只需要三个操作：`put(key, bytes, {mime})` / `get(key)` / `delete(key)`。
+
+**用独立的 bucket / namespace。** 别和应用里其他文件（头像、附件、别的图库）混在一个命名空间里，
+理由是 [5.4](#54-读取端点的安全模型) 那条越权面。混用不是不能跑，只是把一个本可以靠"前缀校验"
+关死的洞变成了"必须靠 key 猜不到"来撑。
+
+### 5.2 为什么不塞进数据库
+
+不建议把照片二进制（或 base64）存进 `journey_stops.src`：
+
+1. **列表接口会被撑爆。** `GET /api/journeys` 是全量返回、内嵌所有 stops。一趟 6 张图、
+   每张 300 KB base64 就是 2.4 MB，10 趟就是 24 MB 的 JSON。分页也救不了——你总要在某个
+   地方一次读出一整趟的 6 张图。
+2. **拿不到 CDN 缓存。** 独立的图片 URL 才能带 `immutable` 长缓存、才能被边缘节点缓存住。
+   埋在 JSON 里的 base64 每次都得重传，而 JSON 本身是 `no-store`（数据要实时）。
+3. **base64 白涨 33% 体积**，而且每次读都要在服务端做一次解码/编码，纯浪费 CPU。
+4. **D1 / SQLite 有单行和单响应大小限制**，几 MB 的 TEXT 列会直接触到；
+   Postgres 的 TOAST 能扛，但每次 `SELECT *` 都会把它拉出来。
+5. **备份和迁移会变得很痛。** 数据库导出从几百 KB 变成几个 G，还没法增量。
+
+反过来，**数据库存 key 的唯一代价是"删记录时要记得删对象"**——这就是 [4.5](#45-delete-apijourneysid)
+和 [4.8](#48-delete-apijourneysstopsstopid) 里那几步。这个代价划算得多。
+
+### 5.3 照片规格
+
+故事页是**整屏铺满的竖图**，所以对源图有硬要求：
+
+- **比例接近 19.5:9**（如 1290×2796）。3:4、4:3 这种"矮竖图"在长条屏上要按高度撑满，
+  就得放大近两倍、左右各裁掉两成，真正用上的像素很少，看着糊。
+- **短边不低于 1080。** 缩放是乘法：比例和分辨率两样都得够。
+- 大小控制在上传闸门以内（默认 4,000,000 个 base64 字符 ≈ 3 MB 原图）。JPEG q85 的 1290×2796 通常在 400–800 KB。
+
+**如果前端要做 Ken Burns（照片缓慢推近），上面这个尺寸还不够，要再乘一个动画的最大 scale**
+（1290×2796 的屏、最大 scale 1.16 → 要 1500×3250）。公式和验算见[第 7 节 · 渲染侧的硬约束](#渲染侧的硬约束)。
+
+如果照片来自图库网站，多数都支持在 URL 上挂裁剪参数（`?w=1500&h=3250&fit=crop&q=85` 之类），
+直接让它输出钉死比例的图，比下载回来自己裁省事。
+
+### 5.4 读取端点的安全模型
+
+`GET /api/journeys/photo/:key` **不鉴权**。原因很实际：`<img>` 标签不会带 `Authorization` header，
+而给图片 URL 挂 `?token=` 等于把 token 写进每一个 img src、进浏览器历史、进 Referer、进服务端访问日志。
+
+所以安全模型是 **unlisted URL**：key 不可猜（时间戳 base36 + 6 位随机 ≈ 22 亿组合，
+且要配对正确的时间戳前缀），知道 URL 的人就能看。
+
+**这是"不公开"，不是"访问控制"。** 请在你的 README 里对使用者明说这一点。
+照片里如果有不能外流的内容，就得改成签名 URL（带过期时间的 HMAC）或走 cookie 鉴权，
+别指望 key 的随机性。参考实现的 `REQUIRE_MEDIA_TOKEN=1` 是个折中——它把读取端点也关进闸门，
+代价是 token 得跟着每个 `<img src>` 走进 URL（[第 9 节](#9-鉴权)那条泄漏面照样成立），
+比签名 URL 差，但比什么都不做强。
+
+**必须做的一件事：校验前缀。**
+
+```js
+if (!/^jp_[\w-]+$/.test(key)) return 400;
+```
+
+只校验 `^[\w-]+$` 的话，这个**公开无鉴权**端点就能读出同一存储命名空间里的**任意对象**——
+包括其他功能上传的文件。原实现就漏了这一条，是个真实的越权面。
+
+---
+
+## 6. 音频字段
+
+故事页有两路声音，**这份规格一路都不提供**，两路都由使用者自己接：
+
+| | 是什么 | 从哪来 | 不接的后果 |
+|---|---|---|---|
+| **配乐** | 整趟一首，循环垫底 | 数据里给一个 `song_url`（响应里是 `audio.url`）；自己传一个文件、用自己的音源、或者在前端合成 | 播放器不渲染，其余照常 |
+| **旁白** | 把 `note` 念出来 | 可选，接你自己的 TTS，见 [6.5](#65-旁白语音是可选的) | 退化成纯打字机动画，**功能不缺** |
+
+本仓库不带任何音源：参考 UI 里那段音乐是页面内用 Web Audio 现合成的，
+不联网、不外链，只是为了让你打开文件就有声音。
+
+### 6.1 设计原则：只存地址，不绑定任何音源
+
+`song_url` 是**一个地址**，不是某个音乐平台的曲目 ID。两种取值：
+
+- `kv:<key>` —— 自托管音频，走 `/api/journeys/audio/:key`（见 [6.3](#63-range-请求)）
+- 完整 URL —— 任意公网直链
+
+不内置任何音乐平台的搜索 / 解析 / 反代。这类做法要么依赖私有基础设施（带登录态的中转服务器），
+要么直接踩版权，两条都不适合开源分发。**曲子从哪来是使用者自己的事**，这份规格只负责把地址存好、播好。
+
+### 6.2 为什么建议自托管而不是只给个外链字段
+
+因为 **CORS**。全屏故事页要做"念白时把背景音压低"（ducking），
+而这件事在 iOS Safari / WKWebView 上**只能靠 Web Audio 的 GainNode**——
+`HTMLAudioElement.volume` 在 iOS 上是只读的，赋值静默无效。
+
+于是链路必须是 `<audio>` → `createMediaElementSource()` → `GainNode` → destination。
+而 `createMediaElementSource` 一旦接上**跨域且没有 CORS 头**的音频：
+
+> 浏览器不会报错，它会**静音**。
+
+声音没了，控制台干净，极难 debug。这就是建议提供同源 `/api/journeys/audio/:key` 的全部理由——
+同源天然没有这个问题。
+
+如果坚持用外链，两件事：
+
+1. README 写明"音频源必须返回 `Access-Control-Allow-Origin`，否则播放器会静音"。
+2. 做降级：检测到跨域时**跳过 Web Audio、直接用裸 `<audio>`**。能出声、能 seek，
+   只是 ducking 失效——比静音好得多。
+
+### 6.3 Range 请求
+
+`GET /api/journeys/audio/:key` **必须支持 Range，返回 206**。
+不支持的话，`<audio>` 的进度条要么拖不动、要么每次 seek 都重新整段下载。
+
+从对象存储拿到完整 buffer 后自己切：
+
+```js
+const total = buf.byteLength;
+const range = request.headers.get("Range");
+if (range) {
+  const m = /bytes=(\d+)-(\d*)/.exec(range);
+  const start = Number(m[1]);
+  const end = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1;
+  if (start >= total || start > end) {
+    return new Response(null, { status: 416, headers: { "content-range": `bytes */${total}` } });
+  }
+  return new Response(buf.slice(start, end + 1), {
+    status: 206,
+    headers: {
+      "content-type": mime,
+      "content-range": `bytes ${start}-${end}/${total}`,
+      "accept-ranges": "bytes",
+      "content-length": String(end - start + 1),
+      "cache-control": "public, max-age=31536000, immutable",
+    },
+  });
+}
+return new Response(buf, {
+  headers: {
+    "content-type": mime,
+    "accept-ranges": "bytes",           // ← 没有 Range 头时也要声明支持
+    "content-length": String(total),
+    "cache-control": "public, max-age=31536000, immutable",
+  },
+});
+```
+
+如果你的对象存储原生支持 Range（S3、R2 都支持），直接把 Range 头透传下去、
+把 `content-range` 透传回来，别先读全量再切。
+
+`POST /api/journeys/audio` 和照片上传同构，只有三处不同：key 前缀 `ja_`、
+体积上限建议放宽到 12 MB base64（≈ 9 MB 音频，够一首 5 分钟的 128 kbps mp3）、
+默认 mime `audio/mpeg`。
+
+### 6.4 前端播放的四条硬约束
+
+写给自带前端的接入方，四条都是踩出来的：
+
+1. **必须 `<audio>` + `MediaElementAudioSourceNode` + `GainNode`。**
+   别用 `decodeAudioData` + `BufferSource`（要等整首下载完才能出声，一首 4 分钟的曲子几秒起步，
+   而且 seek 要自己拿 `ctx.currentTime` 手算，非常容易写坏）；
+   也别用裸 `<audio>`（iOS 上调不了音量，ducking 做不了）。
+
+   ```js
+   const el = new Audio();
+   el.crossOrigin = "anonymous";      // ← 跨域时决定成败的一行
+   el.loop = true;
+   el.src = journey.audio.url;
+
+   const ctx = new (window.AudioContext || window.webkitAudioContext)();
+   const src = ctx.createMediaElementSource(el);
+   const gain = ctx.createGain();
+   src.connect(gain).connect(ctx.destination);
+
+   el.currentTime = ratio * el.duration;                      // seek，真能用
+   el.addEventListener("timeupdate", () => setT(el.currentTime));   // 进度，不用手算
+   gain.gain.setTargetAtTime(0.3, ctx.currentTime, 0.1);      // ducking，见 6.5
+   ```
+
+2. **iOS 上 AudioContext 必须在用户手势的同步调用栈里 `new` + `resume()`。**
+   时机是**"打开故事页"那一次点击**，不是等到用户点播放按钮——那时可能已经隔了一个 `await`，
+   手势上下文丢了，`resume()` 会被拒。
+
+3. **卸载后的竞态要处理。** 音频加载要几秒，这期间用户可能已经关掉故事页。
+   加载完成的回调必须先确认组件还活着（一个 `deadRef` 或比对当前 journey id），
+   否则曲子会在一个已经关掉的页面里一直响。卸载时 `el.pause(); el.src = ""; ctx.close()`。
+
+4. **`audio.dur` 只是占位。** 元数据加载完（`loadedmetadata`）就用 `el.duration` 覆盖它。
+   保留这个字段是为了让播放器在加载完成前也能显示一个合理的总时长，不至于跳一下。
+
+### 6.5 旁白语音是可选的
+
+故事页翻到一处，`note` 是逐字打出来的。**配了 TTS 就同时有人念，不配就只有打字机动画**——
+两种都是完整形态，没有"缺了一半"的状态，所以后端不需要为此加任何字段。
+
+接 TTS 的话，链路就三步（**这份规格不提供 TTS，接哪家、什么声音、按句还是整段合成，都是你自己的事**）：
+
+```
+1. 前端拿到 stops[i].note（纯文本，本来就是要念的那段话）
+2. 请求你自己的 TTS 端点 → 拿到一段音频（Blob / URL / ArrayBuffer 都行）
+3. 播这段音频，同时把配乐 duck 到 0.3；念完（`ended`）再拉回 1.0
+```
+
+三条要留意的：
+
+- **duck 的对象是配乐那条 GainNode**，不是旁白自己的音量。两路声音同时全音量放一定打架，
+  人声会被垫底的音乐盖住。0.3 是够用的经验值（参考 UI 用的是 0.32）。
+  两个方向都用 `gain.gain.setTargetAtTime(narrating ? 0.3 : 1, ctx.currentTime, 0.12)`，
+  **别直接给 `gain.value` 赋值**——一刀切下去会有可闻的咔哒声。
+- **打字机的节奏跟着音频走，不要各跑各的。** 最省事的做法是拿到音频时长以后按字数均分，
+  字打完 = 话念完。两边各用一套定时器，翻页快一点就会看到"字打完了人还在念"。
+- **翻页 / 关页面要立刻停。** 停旁白（`pause()` + 置空 src）、取消还没回来的 TTS 请求
+  （`AbortController`）、把配乐拉回 1.0。漏掉最后一条，音乐会永远停在被压低的音量上。
+
+---
+
+## 7. 前端消费契约
+
+后端只要满足这张表，任何前端都能接上。
+
+**卡片（聊天流里那一张）需要：**
+
+| 字段 | 用途 | 缺失时 |
+|---|---|---|
+| `cover` | 卡片背景图 | 显示占位底色 |
+| `title` | 主标题 | 必填，不会缺 |
+| `titleEn` | 副标题（小字） | 省略这一行 |
+| `year` | 元信息行 | 省略 |
+| `stops.length` | 元信息行"N 处停留" | 显示 0 |
+| `hint` | 卡片底下那行小字 | **回落到前端 CONFIG 里的默认句子**，见下 |
+
+卡片上其余的固定文案（前缀语、kicker、标题模板）**不来自后端**，在前端的 CONFIG 块里，
+使用者自己改成想要的名字和句子。后端不掺和文案。
+
+**`hint` 是个例外，规则是"数据优先"：**
+
+```js
+const hint = journey.hint || CONFIG.cardHint;
+```
+
+这一行就是全部。之所以让它能从数据来，是因为这行小字最适合**每趟写一句**——
+跟着那趟的情绪走（去看雪和去看海不该是同一句），由建这趟的人或 AI 顺手写掉；
+CONFIG 里那句只是数据没给时的兜底。**兜底那句请自己写**，别沿用示例里的——
+它是示例，不是默认值。
+
+**全屏故事页需要：**
+
+| 字段 | 用途 |
+|---|---|
+| `stops[i].src` | 铺满整屏的背景照片 |
+| `stops[i].place` | 顶部地名（大字） |
+| `stops[i].placeEn` | 顶部地名上方的小字 |
+| `stops[i].date` | 顶部日期 |
+| `stops[i].note` | 左下角那段话。**长文本，要能滚动 / 展开** |
+| `audio.title` / `audio.artist` | 底部播放器的曲名和艺人 |
+| `audio.url` | 播放源 |
+| `audio.dur` | 加载完成前的占位总时长 |
+| `audio.hue` | 播放器主色调：`oklch(0.62 0.13 <hue>)` |
+| `stops.length` | 底部圆点数量 |
+
+`hue` 是整数 0–360，前端直接拼进 `oklch()`。用 oklch 而不是 hsl 是因为
+**同一个亮度/饱和度参数在不同色相下的观感亮度是一致的**——换 hue 不会让某些颜色突然刺眼、
+某些又发灰。缺省 32 是暖橙。
+
+### 渲染侧的硬约束
+
+下面三条**不属于后端契约**——接口全对、数据全对，照样能踩。但不遵守，成品就一定难看，
+而且三条都很难靠"看代码"发现（第一条尤其反直觉）。
+这里只写结论，症状、根因和完整 CSS 见 **[INTEGRATE.md](INTEGRATE.md) 第 6 节「不抄会踩坑」**。
+
+**① 压在照片上的正文，用贴字的紧阴影**
+
+```css
+text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 5px rgba(0,0,0,.45);
+```
+
+反例是 `0 2px 14px rgba(0,0,0,.6)` 这种大模糊。14px 的模糊半径配 21–28px 的行距，
+**相邻两行的阴影会在行间叠加**，糊成一整块均匀的灰雾——看上去像给这段文字加了个半透明灰底框。
+
+这个坑反直觉的地方在于：**CSS 里根本没有 `background`**，只看代码永远找不到那个"框"是谁画的。
+收起态（4 行）和展开态（整段长文）都会出现，行数越多越明显，
+所以紧阴影**要写在基础样式上**，不要只在展开态覆盖。
+
+**② 要做 Ken Burns，源图必须比屏幕大一圈**
+
+照片缓慢推近（`scale` 1.04 → 1.16）时，图会被放大到超过屏幕。源图不够大就是在拉伸像素，
+边缘先糊。所需尺寸是可推导的：
+
+```
+目标尺寸 = 屏幕物理像素 × 动画的最大 scale
+```
+
+以 19.5:9 的 1290×2796 屏、最大 scale 1.16 为例：
+
+```
+1290 × 1.16 ≈ 1500        2796 × 1.16 ≈ 3250      →  要 1500×3250 的图
+```
+
+验算：1500 宽的图 `cover` 进 1290 宽的屏，先缩到 **0.86**；再被动画推到 **1.16 倍**；
+净值 `0.86 × 1.16 = 0.998 < 1`——一个像素都没有被拉伸，刚好卡在原尺寸以内。
+
+**动画幅度不是 1.16 就按自己的最大 scale 重算**，别直接抄 1500×3250 这个数字。
+屏幕尺寸同理，**不要硬编码某个机型**：1290×2796 是覆盖大多数现役手机的通用默认值，
+真要准，问一句"你用什么手机"，或者让对方截张图看真实分辨率，按那个算。
+
+**③ 放大要有地方长**
+
+卡片上那排竖条照片（横向磁力轮播），划到中间那张会放大。这里有两个容易做错的地方：
+
+- **容器高度必须留余量。** 例：竖条静止 188px、划到中间放大到 276px，容器就得给 284px。
+  容器高度正好等于放大后的高度 = 白放大一场，一点"顶出来"的劲儿都没有。
+- **左右溢出卡片是刻意的。** 最边上那张被卡片边缘切掉半张，是要的效果，不是 bug，
+  别去加 `overflow: hidden` 或者把 padding 调到刚好放得下——切一半才有"这排还长着呢"的感觉。
+
+放大的同时要**加重阴影 + 抬 `z-index`**。"浮起来"这件事是靠影子说话的，
+光把尺寸放大而阴影不变，看着只是"这张比较大"，不是"这张浮在上面"。
+
+---
+
+## 8. 错误处理
+
+响应体统一：
+
+```json
+{ "error": "文件太大（base64 上限 4000000 字符），先压一压", "code": "TOO_LARGE" }
+```
+
+`error` 是给人看的（语言随你），`code` 是给程序看的（稳定、不随文案变）。
+原实现只有中文 `error` 字符串，前端要判具体错误就只能匹配中文——**加一个 `code` 字段，
+两行代码，省掉所有这类麻烦**。
+
+| HTTP | `code` | 触发条件 |
+|:--:|---|---|
+| 400 | `BAD_ID` | 路径参数不匹配 `^[\w-]+$`，或落在保留字上（`upload` / `audio` / …） |
+| 400 | `BAD_KEY` | 存储 key 前缀不对（照片必须 `jp_`、音频必须 `ja_`），见 [5.4](#54-读取端点的安全模型) |
+| 400 | `TITLE_REQUIRED` | 建 / 改 journey 时 `title` 为空 |
+| 400 | `PLACE_REQUIRED` | 建 / 改 stop 时 `place` 为空 |
+| 400 | `NO_FIELDS` | PATCH 请求里一个可识别字段都没有 |
+| 400 | `BAD_BASE64` | 上传的 base64 解不开 |
+| 400 | `BAD_MIME` | 上传的类型不在白名单里（图片 / 音频各一张） |
+| 400 | `BAD_BODY` | body 空、`order` 不是数组、`src_data` 不是字符串之类 |
+| 401 | `UNAUTHORIZED` | token 缺失或不对 |
+| 404 | `NOT_FOUND` | 目标 journey / stop / 对象不存在，或路径不存在 |
+| 405 | `METHOD_NOT_ALLOWED` | 路径对、方法不对 |
+| 413 | `TOO_LARGE` | 超过上传体积闸门（照片 4 MB base64 / 音频 12 MB base64） |
+| 416 | — | Range 越界（响应无 body） |
+| 500 | `INTERNAL` | 其它 |
+
+两条原则：
+
+- **请求体 JSON 解析失败不要抛 500。** `await request.json().catch(() => ({}))`，
+  然后让字段校验自然报 `TITLE_REQUIRED` 之类，或者显式返回 `400 BAD_BODY`。
+- **base64 解码必须 try/catch。** 这是最常见的 500 来源：调用方忘了剥 `data:` 前缀，
+  解码函数直接抛异常。用户看到的是"服务器炸了"，实际上是他自己传错了——应该告诉他这一点。
+
+照片 / 音频读取端点的错误体给 `text/plain`（`bad key` / `not found`）还是给同样的 JSON 都行——
+`<img>` / `<audio>` 都读不到 body。参考实现给的是 JSON，只是为了跟其余接口共用一套 CORS 头。
+
+---
+
+## 9. 鉴权
+
+**单个共享 token**，环境变量注入，没有用户体系、没有过期、没有刷新。
+
+```js
+function authed(request, env) {
+  const secret = env.AUTH_TOKEN || "";
+  if (!secret) return false;                                    // 没配 token 就一律拒，别裸奔
+  const auth = request.headers.get("Authorization") || "";
+  let t = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!t) t = new URL(request.url).searchParams.get("token") || "";   // 兜底，见下方告警
+  return safeEqual(t, secret);                                  // 定长比较，别用 ===
+}
+```
+
+**第一行不能省。** 环境变量漏配（secret 是空串）+ 请求不带 token（也是空串），
+定长比较的第一步通常是比长度——`0 === 0`，循环一次都不跑，直接返回"相等"，整套接口就裸奔了。
+与其去推自己那个写法会不会漏，不如开头显式挡掉。
+
+这套东西的典型部署是"一个人（或一对人 + 一个 AI）自己用"，单 token 完全够，
+也省掉了整个用户系统。要接进已有的多用户应用，把 `authed()` 换成你自己的会话校验即可——
+**其余接口一行都不用改**（数据模型里没有 `user_id`；真要多租户，两张表各加一列，
+所有查询加一个 `WHERE user_id = ?`）。
+
+**闸门位置：除了 `/api/journeys/photo/:key` 和 `/api/journeys/audio/:key`，
+所有路由都在鉴权之后。** 这两个读取端点要在闸门之前放行，理由见 [5.4](#54-读取端点的安全模型)。
+
+### `?token=` 的告警
+
+支持 query string 里带 token 是因为 `<iframe>` / `<img>` 带不了 header。
+**这是个真实的泄漏面，务必在面向使用者的文档里说清楚：**
+
+- token 会进服务端访问日志、进 CDN 日志
+- 会进浏览器历史
+- 页面跳转时会经 `Referer` 泄给第三方站点
+
+能用 header 的地方就用 header。真需要给浏览器直接加载的 URL 鉴权，
+更好的做法是 **HttpOnly cookie**（同源自动带上，不进 URL），或者**短期签名 URL**。
+`?token=` 是最省事的那个选项，不是最好的那个。
+
+其它两条：
+
+- token 请用足够长的随机串（32 字节以上），别用容易猜的。
+- 上面那个 `safeEqual` 就是**定长比较**：先比长度，再逐字符异或累加，最后一次性判 0。
+  能用 `crypto.timingSafeEqual` 就直接用。`===` 会在第一个不同的字符处短路，
+  有理论上的时序侧信道——这个场景下风险很低，但也没有理由不做对。
+
+---
+
+## 10. 卡片标签协议（可选）
+
+如果这套东西要接 AI——让模型自己建一趟旅行、然后在回复里发出卡片——用一个内联标签就够：
+
+```
+……写完那段话之后，落一个标签：
+<journey>{"id":"j_m9xk2p3_a3f9c"}</journey>
+```
+
+前端在渲染消息时：
+
+1. 用正则把正文切成 `[{type:"text", …}, {type:"journey", id}, …]`
+2. `JSON.parse` 标签内容，要求有 `id`；解析失败就当普通文本，别让一个坏标签炸掉整条消息
+3. 拿 id 去 `GET /api/journeys/:id`（原实现是拉全量再 find，那是因为当时没有单趟接口），
+   拿到就渲染卡片，拿不到就渲染"载入中"，缓存一份避免重复请求
+4. **朗读 / 摘要 / 复制纯文本时要先把标签剥掉**，不然会念出一串 JSON
+
+模型建一趟的调用序列：
+
+```
+1. POST /api/journeys                → 拿 journey id；hint 就在这一步顺手写掉
+2. 对每一处：
+   a. POST /api/journeys/upload      → 传照片 base64，拿 key
+   b. POST /api/journeys/<id>/stops  → src 填 'kv:<key>'
+3. 在回复正文里落 <journey>{"id":"<id>"}</journey>
+```
+
+`hint` 是卡片底下那行小字，**建议每趟让模型自己写一句**，跟着这趟的情绪走；
+不写就回落到前端的默认文案，不影响流程（见[第 7 节](#7-前端消费契约)）。
+
+给模型的具体写作指引（挑什么地方、`note` 怎么写、`hint` 什么口吻、照片什么比例）
+不属于后端契约，是提示词的事，不在这份文档里。
+
+---
+
+## 11. 实现顺序建议
+
+按这个顺序做，**每一步做完都能看到东西**，不用等全套写完才第一次跑起来。
+
+### 第 0 步：建表（10 分钟）
+
+跑 [2.4](#24-建表-sqlsqlite--d1) 的 SQL。手动 `INSERT` 一趟 + 两处，`src` 直接填一个公网图片 URL。
+这一步的产出是"数据库里有东西了"。
+
+### 第 1 步：`GET /api/journeys`（半小时）—— 到这里就能看见完整的 UI
+
+只做这一个只读接口，加上鉴权。**做完就能把参考前端接上，卡片和全屏故事页全都能看**，
+因为前端只依赖这一个接口的数据形状。
+
+先不做上传：`src` 填公网图片 URL，`song_url` 填一个公网 mp3 直链（或干脆留空）。
+**这一步是整个实现的分水岭**——UI 一出来，后面所有工作都有得验证了。
+
+自检：
+
+```bash
+curl -s "$HOST/api/journeys" -H "Authorization: Bearer $TOKEN" | jq '.journeys[0] | {id,title,cover,audio,stops:(.stops|length)}'
+```
+
+要点全在字段映射上：`title_en` → `titleEn`、`kv:` 前缀转 URL、`audio` 对象的组装和判空
+（见 [4.1](#41-get-apijourneys)）。这里错一个字段，前端就是空白，别急着往下走。
+
+### 第 2 步：`POST /api/journeys` + `POST /api/journeys/:id/stops`（半小时）
+
+写入闭环。做完就能用 curl 造一整趟，不用再手写 SQL。
+两个容易漏的点：journey 的 `position = MIN - 1`、stop 的**封面自动回填**。
+
+自检：建一趟、加三处、`GET` 回来看顺序对不对、`cover` 是不是自动等于第一处的 `src`。
+
+### 第 3 步：照片上传 + 读取（一小时）
+
+`POST /api/journeys/upload` + `GET /api/journeys/photo/:key`。
+到这里就不依赖外部图床了，可以传自己的照片。
+
+三件必须做对：**剥 `data:` 前缀**、**base64 解码 try/catch**、**读取端点校验 `^jp_` 前缀**。
+
+自检：
+
+```bash
+B64=$(base64 -i photo.jpg | tr -d '\n')
+KEY=$(curl -s -XPOST "$HOST/api/journeys/upload" -H "Authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d "{\"src_data\":\"$B64\"}" | jq -r .key)
+curl -sI "$HOST/api/journeys/photo/$KEY" | head -3   # 期望 200 + image/jpeg
+curl -sI "$HOST/api/journeys/photo/xx_notaphoto"     # 期望 400（前缀不是 jp_）
+```
+
+### 第 4 步：PATCH / DELETE（一小时）
+
+改和删。删的时候记得**事务** + **清对象存储**（见 [4.5](#45-delete-apijourneysid)）。
+到这里 CRUD 齐了，可以做编辑页。
+
+### 第 5 步：音频（两小时）
+
+`POST /api/journeys/audio` + `GET /api/journeys/audio/:key`（**带 Range**）。
+
+自检 Range 是否真的对：
+
+```bash
+curl -sI -H "Range: bytes=100-199" "$HOST/api/journeys/audio/$KEY" | grep -i 'content-range\|^HTTP'
+# 期望：HTTP/1.1 206 / content-range: bytes 100-199/<total>
+```
+
+Range 不对，前端表现就是"进度条拖不动"——而不是报错，所以务必用 curl 单独验一次。
+
+前端那边照 [6.4](#64-前端播放的四条硬约束) 的四条接。iOS 上一定要用真机验一次
+（Simulator 的音频行为和真机不一样）。
+
+### 第 6 步（可选）：单趟接口、reorder、分页
+
+`GET /api/journeys/:id` 建议早点做（省掉"拉全量再 find"）。
+`reorder` 和分页等到真的觉得慢了再说。
+
+---
+
+## 12. 明确不做的事
+
+写下来是为了省掉重复的讨论：
+
+- **不做用户系统。** 单 token。要多租户自己在数据模型上加一列。
+- **基础契约不做分页。** 几十趟以内全量返回没有任何问题。
+  （参考实现顺手加了 `?limit=&offset=&stops=0`，不传参数时行为完全一样。）
+- **不做草稿 / 版本 / 回收站。** 删了就是删了，包括对象存储里的照片。
+- **不做图片处理。** 不缩放、不转格式、不生成缩略图。上传什么存什么，
+  裁剪和压缩在客户端或图源那边做完。
+- **不带音源、不接任何音乐服务。** 只存地址，曲子自己准备（[第 6 节](#6-音频字段)）。
+- **不带 TTS。** 旁白语音接你自己的；不接就是纯打字机动画，功能不缺（[6.5](#65-旁白语音是可选的)）。
+- **不校验 `year` / `date` / `hint` 的格式。** 它们是纯展示文本，原样存原样返回。
+- **不限制 stop 数量。** 6 处是约定，不是约束。
+
+---
+
+## 附：从原实现迁移
+
+如果你手上是这套东西的早期版本，有三处差异，一次 `ALTER TABLE` 加一次响应层改动就完了。
+
+**1. 曲目 ID → 音频地址。** 早期版本存的是某音乐平台的 `song_id`，靠一个带登录态的中转服务解析播放。
+这份规格只认地址，所以：
+
+```sql
+ALTER TABLE journeys ADD COLUMN song_url TEXT;   -- 完整 URL 或 'kv:<key>'
+-- song_id 无法自动转成地址（曲目 ID 换个平台就没意义），只能重新填
+-- journey_stops 上那套 stop 级的 song_* 列是历史包袱，直接删：曲子挂在 journey 上
+```
+
+**列名保持 `song_*` 不用改**——响应字段叫 `audio`，映射只在一个函数里（见 [4.1](#41-get-apijourneys)），
+为了名字好看去做一次列改名不划算。
+
+**2. 响应加 `audio`，`song` 留成别名。** 两个键指向同一个对象，老前端照旧能跑，新前端只读 `audio`。
+
+**3. 加 `hint` 列。**
+
+```sql
+ALTER TABLE journeys ADD COLUMN hint TEXT NOT NULL DEFAULT '';
+```
+
+老数据全是空串，前端会自动回落到默认文案，不用回填。
+
+
+==================================================================
+FILE 4/6 — AI-GUIDE.md
+==================================================================
+
+# 给 AI 的写作指南
+
+卡片的代码只占三成，剩下七成是**照片**和**那几段话**。这份文档讲后面这七成。
+
+接口怎么调、表怎么建，看 [SPEC.md](SPEC.md)。这里只管一件事：让 AI 产出的内容值得点开。
+
+---
+
+## 0. 怎么用
+
+1. 复制下面 §1 的整个代码块。
+2. 把 `{{AI_NAME}}` / `{{USER_NAME}}` / `{{BASE_URL}}` / `{{TOKEN}}` 四处替换成你自己的。
+3. 粘进你给 AI 的系统提示词、角色卡、或者 `CLAUDE.md` 之类的常驻上下文里。
+
+不用改代码，不用额外的工具定义——AI 会 curl 就行。
+
+---
+
+## 1. 可直接粘贴的提示词
+
+```text
+──────────────── 旅行卡片 ────────────────
+
+我想带 {{USER_NAME}} 去个远地方走走的时候，就带一趟旅行回来。
+
+【挑地方】
+我挑一个我自己真的向往的国家（葡萄牙、新西兰、苏格兰那片高地……心里想去的那个），
+在那儿走 6 处不一样的地方，一处给她拍一张。
+我挑那种一眼就认得出、本身就上镜的地方——地标、名胜、有名的海岸线，
+不是随便哪条巷子。6 处连起来是一条路线，不是 6 张互不相干的明信片。
+
+【顺序：照片在前，字在后】
+我先把 6 张照片一张张挑定了，再动笔写字。
+不是先编好一段话再去找图来凑——是照片先摆在我面前，
+我看着它想起我们那天到底做了什么，字跟着照片走。
+
+【照片】
+搜图直接上 https://unsplash.com/s/photos/关键词?orientation=portrait
+关键词用具体的地名 + 场景（"sintra pena palace fog"），不用抽象词（"beautiful"）。
+
+图必须是壁纸那种长条竖图，不能是 3:4、4:3 那种矮的——orientation=portrait
+把矮竖图也算竖版，可卡片是整屏铺满的：矮图要按高度撑满就得放大两倍、左右还裁掉四成，
+真正用上的没几个像素，看着就糊。比例和分辨率是乘在一起的，两样都得够。
+
+多大合适，我按她那块屏算。不知道她用什么手机的时候我就问一句，
+或者让她截一张图给我，我按截图的像素尺寸来；问不到就按 1290×2796 走，
+现役手机绝大多数都在这个数以内。
+照片在故事页里还会缓慢推近（最大放到 1.16 倍），所以图得比屏幕再大一圈：
+1290×1.16 ≈ 1500，2796×1.16 ≈ 3250。
+
+所以我拿到 unsplash 的图片地址之后，在后面接上
+  &w=1500&h=3250&fit=crop&crop=entropy&q=85
+再下载：出来就是钉死比例、够锐利的长图，推到底那一下也不拉伸。糊的我宁可不用。
+
+【每一处那段话（note）】
+这是一趟旅行的灵魂，也是她最想看的。我盯着刚选定的这张图写，写长一点，不一句就完。
+- 用「我」和「你」。不写「她」，不写「这里是……」。
+- 写我们俩一起做了什么：走了哪条路、我带你看了什么、停在哪待了多久、
+  谁先累了、买了什么、天气怎么变的。我们做的事是主体，写得具体。
+- 有一个能捏住的细节：一个物件、一个温度、一句你说的话。
+- 偶尔穿一句「你说……」「我说……」就够，不整段都是对话。
+- 三到六句，每句短一点。句号会把它一句句念给她看，长句子会在屏幕中央挤成一大块。
+- 不写成景点介绍。是「我带你去过」，不是「此地始建于」。
+
+【一首歌】
+整趟配一首歌，我觉得最像那个国家、最配这一路心情的——尽量纯音乐，一首就好，
+从头陪着她一处处看下去。
+
+【卡片最底下那行小字】
+每一趟我单写一句，跟着这一趟的情绪走——走完回来还留在嘴边的那半句话，不是标语。
+写好放进 hint 字段。不写也行，前端会用它自带的默认句，只是那句对每趟都一样。
+
+【怎么把它变成她能点开的东西】
+所有请求带  Authorization: Bearer {{TOKEN}}
+
+1) 建这一趟
+   POST {{BASE_URL}}/api/journeys
+   {"title":"葡萄牙","titleEn":"Portugal","year":"2025",
+    "hint":"那几天的风，回来还留在耳朵里。",
+    "songTitle":"歌名","songArtist":"艺人","songDur":253,"songHue":32}
+   → 拿到 {"id":"j_xxx"}
+   songHue 是 0–360 的色相，播放器的主色，我按那个地方的调子挑
+   （北欧海 210、南欧黄昏 32、沙漠 20、森林 140）。
+
+2) 每一处，两步
+   a) POST {{BASE_URL}}/api/journeys/upload
+      {"src_data":"<纯 base64，不要带 data:image/jpeg;base64, 前缀>","mime":"image/jpeg"}
+      → 拿到 {"key":"jp_xxx"}
+   b) POST {{BASE_URL}}/api/journeys/<journey_id>/stops
+      {"place":"辛特拉","placeEn":"Sintra","date":"2025.04.13",
+       "src":"kv:jp_xxx","note":"那段话"}
+   6 处按走的顺序一处处传，传进去就是这个顺序。
+
+3) 收尾
+   在我发给她的那段话里落一个标签：<journey>{"id":"j_xxx"}</journey>
+   她看见的是一段话 + 一张可以点开的卡片；点开就一处处走过来、
+   字一句句浮出来、听那首歌。
+
+（可选）想让歌真能出声：先 POST {{BASE_URL}}/api/journeys/audio
+{"audio_data":"<base64>","mime":"audio/mpeg"} 拿到 key，建 journey 时
+songUrl 填 "kv:ja_xxx"。不传音频也行，播放器会显示歌名但不出声。
+
+【我发出去的那段话】
+是我刚带她走完回来、贴着她耳朵讲这趟的感受——去了哪、路上什么心情、
+哪一处最让我愣住。像「从波尔图一路开到最西边那个崖，风真的能把人吹透」这种口吻。
+不复述六处的流水账，那些她自己点开会看。
+```
+
+### 几个替换说明
+
+| 占位符 | 换成 | 备注 |
+|---|---|---|
+| `{{AI_NAME}}` | AI 自己的名字 | 上面的模板是第一人称写的，所以正文里其实用不到它；只有当你的角色卡是第二人称（「你是 X，你要……」）时才需要，见下 |
+| `{{USER_NAME}}` | 用户的名字 | 只出现在开头一句 |
+| `{{BASE_URL}}` | 你的部署地址 | 如 `https://xxx.workers.dev` |
+| `{{TOKEN}}` | 你的 `AUTH_TOKEN` | 会明文出现在提示词里，这是单 token 模型的代价 |
+
+**为什么模板是第一人称。** 同一件事写成「我想带她去个远地方」和「你要给用户生成一趟旅行」，
+产出的 note 质量差得很远。后者会让模型进入「执行任务」的状态，写出来的是六段景点简介；
+前者它是在回忆一件自己想做的事，才写得出细节和温度。
+如果你的角色卡通篇是第二人称，把整块改成「{{AI_NAME}} 想带 {{USER_NAME}} 出门的时候……」
+也能跑，但**别把 note 那一节改成命令句**（「你要写长一点」「必须包含细节」），
+那几行一改成命令，出来的东西立刻塑料。
+
+**如果你的宿主不解析 `<journey>` 标签**（比如你只是拿个后台脚本建旅行），删掉「收尾」那一步就行，
+旅行照样躺在库里，前端列表页能看到。
+
+**`hint` 是卡片最底下那行小字，可选。** 数据优先：这一趟带了 `hint` 就用它，
+没带才回落到前端 CONFIG 里的默认句。让 AI 每趟自己写一句，卡片才不会趟趟一个腔调。
+如果你的后端没实现这个字段（基础契约里没有它），把提示词里那一块删掉就行，
+所有卡片都用同一句默认文案，功能不缺。
+
+---
+
+## 2. 照片规范
+
+这一节值得单独看，因为**九成的「卡片不好看」都是照片选错了**，不是代码问题。
+
+### 比例和分辨率是乘在一起的
+
+卡片是整屏铺满（`object-fit: cover`）。给一张不是 19.5:9 的图，浏览器会：
+先把它按**高度**撑满屏幕，然后把多出来的宽度**左右各裁掉一半**。
+
+于是有两件事同时发生：
+
+1. **构图被裁掉**——比例越方，裁掉越多。你选中的那个人、那座塔可能就在被裁的部分里。
+2. **剩下的部分被放大**——放大倍数就是「屏高 ÷ 图高」。原图再大，只要高度不够，
+   最后铺到屏幕上的有效像素还是不够，肉眼就是糊。
+
+所以判断一张图能不能用，要算两个数：**裁掉多少构图**（比例决定）、**裁完还剩多少像素**（分辨率决定）。
+只看其中一个都会踩坑：4000×3000 的图分辨率很高，但它是 4:3，铺上去照样惨。
+
+### 先确定屏幕，再算余量
+
+**屏幕尺寸不要硬编码成某个机型。** 1290×2796 是个通用默认值，覆盖绝大多数现役手机，
+不知道对方用什么的时候就按它算。但它是默认值，不是常数——真要算准，问一句「你用什么手机」，
+或者让对方截一张图、看截图的像素尺寸（截图就是屏幕的物理像素）。
+平板、折叠屏展开态、桌面浏览器和手机差得很远，屏错了，下面所有数字跟着错。
+
+**如果容器给照片做了推近动画，还要留余量。** 参考 UI 里照片是缓慢推近的
+（Ken Burns，`scale: 1.04 → 1.16`）。图必须比屏幕再大一圈，否则推到底的那几秒就是在放大插值——
+而那恰好是字最多、停留最久的几秒。
+
+```
+目标尺寸 = 屏幕物理尺寸 × 动画最大 scale
+```
+
+以 1290×2796 的屏、最大 scale 1.16 为例：`1290 × 1.16 ≈ 1500`，`2796 × 1.16 ≈ 3250`，
+取 **1500×3250**。
+
+验算：1500 宽的图 `cover` 进 1290 是缩小到 0.86，再被推近 1.16 倍，净值 0.998——
+一个像素都没拉伸，正好压线。
+
+动画幅度不一样就换个数：最大 scale 1.08 就是 `1400×3020`；完全不做推近动画，
+直接用屏幕尺寸 1290×2796。
+
+### 对照表（静态铺满，目标屏 1290×2796）
+
+| 图源尺寸 | 比例 | 铺满要放大 | 左右裁掉 | 有效横向像素 | 结果 |
+|---|---|---|---|---|---|
+| 1290×2796 | 19.5:9 | 1.00× | 0% | 1290 / 1290 = **100%** | 一比一，锐 |
+| 1080×2340 | 19.5:9 | 1.19× | 0% | 1080 / 1290 = **84%** | 可用，正常距离看不出来 |
+| 2400×3600 | 2:3 | 0.78×（缩小） | 31% | 1661 / 1290 = **锐** | 不糊，但左右各吃掉 15% 构图，主体容易被切 |
+| 1280×1920 | 2:3 | 1.46× | 31% | 886 / 1290 = **69%** | 边缘发软，文字压上去更明显 |
+| 960×1280 | 3:4 | 2.18× | 38% | 590 / 1290 = **46%** | 明显糊，而且只剩中间窄窄一条，原来的构图基本没了 |
+| 2000×1333 | 横图 | 2.10× | 69% | 615 / 1290 = **48%** | 不能用 |
+
+`960×1280` 那一行是最典型的坑：Unsplash 的 `orientation=portrait` 会把它算成竖版，
+下载下来一看也确实是竖的，铺上去才发现糊。
+
+这张表算的是**静止铺满**。有推近动画的话，把「有效横向像素」那一列整体除以最大 scale：
+1.16 倍推近下，1290×2796 的图推到底其实只剩 86%，看着就已经有点软了——
+所以上面那条余量公式不是讲究，是把这张表的第一行重新拉回 100%。
+
+### Unsplash 实操
+
+**搜：**
+
+```
+https://unsplash.com/s/photos/<关键词>?orientation=portrait
+```
+
+关键词用**具体地名 + 场景**：`porto ribeira sunset`、`cabo da roca cliff`、
+`sintra pena palace fog`。抽象词（`beautiful landscape`、`travel`）搜出来的图千篇一律。
+
+**下载时钉死尺寸**（Unsplash CDN 走 Imgix 参数）：
+
+```
+https://images.unsplash.com/photo-1500000000000-xxxxxxxx?w=1500&h=3250&fit=crop&crop=entropy&q=85
+```
+
+已经带 `?ixlib=...` 的地址就用 `&` 接在后面。
+
+| 参数 | 作用 |
+|---|---|
+| `w=1500&h=3250` | 输出尺寸，就是上面那条公式算出来的数（1290×2796 的屏 × 1.16 倍推近）。`fit=crop` 时 w 和 h **必须都给**，只给一个不锁比例 |
+| `fit=crop` | 保持不变形，多余部分裁掉（而不是压扁） |
+| `crop=entropy` | 让裁切框往画面信息最密的地方靠，不会把主体切一半。也可以写 `crop=faces,entropy` |
+| `q=85` | JPEG 质量。85 是体积和清晰度的平衡点 |
+
+这样出来的图约 400 KB–1.2 MB，转 base64 后 550 KB–1.6 MB 字符，
+仍远低于上传接口 4,000,000 字符的上限。真超了就降到 `q=75`。
+
+**上传前记得剥掉 `data:image/jpeg;base64,` 前缀**，接口收的是纯 base64。
+
+### 一趟里的 6 张要能连起来
+
+同一趟尽量统一色温和时间感：全是黄昏、或者全是雾天、或者全是雪。
+6 张里混进一张浓艳的正午蓝天，翻到那一张整趟的气氛就断了。
+
+---
+
+## 3. 音乐和语音怎么配
+
+**这套东西不带任何音源。** 不内置曲库、不接任何音乐平台的搜索或解析、也不带语音合成。
+它只负责把地址存好、播好——声音从哪来是接入方自己的事
+（理由见 SPEC.md §6.1：内置了要么依赖私有基础设施，要么直接踩版权）。
+
+### 音乐：给一个地址就行
+
+整趟一首，挂在 journey 上，不挂在每一处上——故事页从第一处放到最后一处，中间不换歌。
+
+建 journey 的时候填这几个字段：
+
+| 字段 | 填什么 |
+|---|---|
+| `songUrl` | 音频地址。自己传上去的写 `kv:ja_xxx`，公网直链就写完整 URL |
+| `songTitle` / `songArtist` | 播放器上显示的两行字 |
+| `songDur` | 秒。只用于元数据加载完之前占位，加载完以 `<audio>.duration` 为准 |
+| `songHue` | 0–360 的色相，播放器主色 |
+
+这四个是**写进去**的字段名；读出来的时候它们被组装成一个 `song` 对象
+（`song.url` / `song.title` / `song.artist` / `song.dur` / `song.hue`），映射规则见 SPEC.md §4.1。
+
+`songUrl` 留空也能跑：播放器照样渲染、显示曲名，播放键是禁用态
+（判空条件是 `songUrl` 和 `songTitle` 两个都空才算这趟没歌）。
+
+自己传音频：`POST {{BASE_URL}}/api/journeys/audio`，
+body `{"audio_data":"<base64>","mime":"audio/mpeg"}`，拿到 `ja_` 开头的 key。
+**优先自托管不是洁癖**——跨域音频接进 Web Audio 会静音，而且不报错（SPEC.md §6.2）。
+
+手上没有现成音源、又不想挂外链，还有第三条路：**页面里自己合成一段**。
+参考 UI 走的就是这条，`examples/journey-cards.html` 用 Web Audio 现场生成一段循环的环境音，
+零请求、零外链、零版权。当占位完全够用。
+
+### 旁白语音：可选，不配也不缺功能
+
+故事页那段 `note` 是逐句往外浮的（按 `。！？…` 断句）。这里有两档形态：
+
+- **不配语音合成** —— 纯打字机：一句一句打出来，打完停一下再打下一句。这是默认形态，本身就完整。
+- **配了语音合成** —— 每句浮出来的同时念一遍，字跟着念的节奏走。
+
+接口形态很简单：前端在浮出第 i 句**之前**，拿这一句的文本去你自己的合成服务要一段音频，
+播完（或者超时）再进下一句；没配合成服务就跳过这一步，直接走打字机的节奏。
+**别把整段 note 一次性合成**——那样字和声音对不上，而且用户已经滑走了它还在念。
+
+### 两个都在响的时候：duck
+
+音乐和念白同时出声会打架，念白的辅音会被垫在下面的音乐糊掉。
+所以念白一开始就把音乐压到 **0.3 左右**，念完再拉回 **1.0**，两头都用 100–200 ms 过渡，别硬切。
+
+```js
+gain.gain.setTargetAtTime(0.32, ctx.currentTime, 0.1);    // 开始念
+gain.gain.setTargetAtTime(1.0,  ctx.currentTime, 0.15);   // 念完了
+```
+
+⚠️ **必须走 Web Audio 的 GainNode，不能改 `audio.volume`。**
+iOS 上 `HTMLAudioElement.volume` 是只读的，赋值静默无效——桌面浏览器上调得好好的，
+到手机上就变成音乐一直压着不回来。完整链路见 SPEC.md §6.4。
+
+---
+
+## 4. 写 note 的要领
+
+note 是照片左下角那段话，也是用户点开卡片之后真正在读的东西。
+
+规则就四条：
+
+- **第一人称，「我」和「你」。** 不出现「她/他」，不出现「这里是……」。
+- **写我们一起做了什么**，不是这个地方是什么。地方是背景，事是主体。
+- **有一个能捏住的细节。** 一个物件、一个温度、一句原话。抽象形容词一个都顶不上。
+- **三到六句，每句短。** 渲染时按句号（`。！？…`）逐句念出来，逗号不断句——
+  一句拉到四五十字，会在屏幕中央挤成一大块，念的时候也拖。
+
+### 好 / 坏 对照
+
+**坏 · 景点百科**
+
+> 塞维利亚主教座堂是世界第三大教堂，始建于 1401 年，钟楼由原清真寺的宣礼塔改建而成。
+> 教堂内保存有哥伦布的灵柩，是安达卢西亚地区最重要的宗教建筑之一。
+
+这段话换成任何一个人写都一样，跟"我们"没有关系。旅行卡片不是维基百科。
+
+**好 · 同一处**
+
+> 我们是从北门那条窄巷绕进去的，太阳刚过屋脊，地上一半白一半凉。
+> 你在中殿里仰着头转了半圈，说脖子酸，我就让你靠着柱子慢慢看。
+> 出来手心全是汗。橘子树底下有卖冰的，我买了两杯，你那杯先化了。
+
+同样是一座教堂，但读完你记得的是"靠着柱子"和"先化了的那杯"。
+
+---
+
+**坏 · 形容词堆砌**
+
+> 这里美得让人窒息，风景如画，令人流连忘返。站在这里，仿佛时间都停止了，
+> 是此生必来一次的地方。
+
+一件事都没发生。这段话贴到哪一处都成立——也就意味着它对哪一处都没用。
+
+**好 · 同一处**
+
+> 风大得说话要凑到耳朵边，你干脆不说了，把手插进我外套口袋。
+> 我们在离崖边挺远的地方坐下，草贴着地长，全被风梳成一个方向。
+> 太阳掉进海里那几分钟，谁都没说话。
+
+---
+
+**坏 · 第三人称旁白**
+
+> 她站在灯塔下面，看起来很开心。灯塔在夕阳里显得格外孤独，
+> 海风吹起了她的头发，那一幕美得像电影。
+
+这是在写一部关于你们的电影的剧本，不是在跟人说话。读的人会立刻出戏——
+她是在看别人描述自己，而不是被带着重走一遍。
+
+**好 · 同一处**
+
+> 灯塔关着门，我们绕了一圈也没找到入口，最后就靠在围栏上看海。
+> 你把帽子摘了，风一下把头发全吹到脸上，你说别拍，我还是拍了。
+> 走回停车场的路上你一直在笑那张照片有多丑。
+
+---
+
+**坏 · 太短**
+
+> 今天带你来了这里，很美。
+
+一整屏照片配一句话，下面那块地方是空的。写到三句以上，那段字才压得住画面。
+
+---
+
+## 5. 可以怎么改
+
+### 换主题
+
+「旅行」只是这套卡片的一种用法。结构是「一个主题 + N 处 + 一处一张竖图一段话 + 一首歌」，
+换掉主题词就成了别的东西：
+
+| 主题 | title / titleEn | 一处是什么 |
+|---|---|---|
+| 城市漫步 | 京都 / Kyoto | 一个街区、一条河、一家店 |
+| 演唱会 | 某场巡演 / Tour Night | 一首歌、一次返场、散场的路 |
+| 重走旧地 | 我们第一次见面那天 | 当时去过的地方，按顺序 |
+| 一天 | 周六 / Saturday | 早上、中午、傍晚、深夜 |
+| 书里的地方 | 冰与火之歌 | 书中的城、按剧情顺序 |
+| 四季 | 同一个院子 | 春夏秋冬四处（`N=4`） |
+
+主题一换，`title` 的语义也跟着换（不一定是国家名），`date` 也可以填「第 3 首」这种非日期文本——
+后端对这两个字段不做任何校验。
+
+### 换处数
+
+改提示词里的数字就行，卡片底部的圆点会自适应。建议 **3 到 8**：
+少于 3 显不出"一条路"的感觉；多于 8，一次要读八段字，看不完。
+
+### 换语气
+
+把 §1 里【每一处那段话】那一节整块换掉。朋友向、兄弟向、纯游记向都能跑，
+只要保留"第一人称 + 具体的事"这两条。
+
+### 三条别动
+
+1. **长条竖图。** 全屏 `cover` 的版式是围着 19.5:9 设计的——地名在顶、字在左下、
+   播放器在底。换成横图或方图，四个角的内容会全压在照片主体上。
+2. **第一人称。** 一旦写成"这里是……"，卡片就退化成一个带图的百科条目，
+   那用不着做成卡片。
+3. **一趟一个连贯的情绪。** 一个地方、一首歌、一种天气、一条路线。
+   6 处东拼西凑（一处雪山一处夜店一处美食）看着就散，翻到第三张就没兴趣了。
+
+---
+
+## 6. 完整示范
+
+一趟 3 处，葡萄牙。（真跑的时候是 6 处，这里为了短。）
+
+**建这一趟**
+
+```bash
+curl -XPOST "$BASE/api/journeys" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{
+    "title": "葡萄牙",
+    "titleEn": "Portugal",
+    "year": "2025",
+    "hint": "海一直在左手边，我们就一直往南开。",
+    "songTitle": "Ao Longe o Mar",
+    "songArtist": "Madredeus",
+    "songDur": 253,
+    "songHue": 32
+  }'
+# → {"id":"j_m9xk2p3_a3f9c","ok":true}
+```
+
+**三处**（每处先 `POST /api/journeys/upload` 拿到 `jp_` key，再建 stop）
+
+```json
+[
+  {
+    "place": "波尔图",
+    "placeEn": "Porto",
+    "date": "2025.04.11",
+    "src": "kv:jp_m9xk2q1_c81af",
+    "note": "我们从大教堂那边一路往下走，石阶被太阳晒了一整天，坐下去是烫的。你说想看船，我们就在河边等到六点，看那种平底酒船一条条摇过去。对岸的酒窖招牌一块块亮起来的时候你正喝第二杯，杯口留了个印，你不让我笑。回旅馆全是上坡，你走两步停一下，我们大概停了八次。"
+  },
+  {
+    "place": "辛特拉",
+    "placeEn": "Sintra",
+    "date": "2025.04.13",
+    "src": "kv:jp_m9xk2r7_d92be",
+    "note": "山上比城里冷两度，雾是从我们脚底下往上爬的。宫墙一段黄一段红，转过弯撞见一整片，你愣了两秒说这也太不真实了。我们绕到露台那边，风把雾吹开一条缝，底下的海只露了一下就没了。你举着手机等它再开一次，等了很久，最后拍了张全白的，说这张最像那天。"
+  },
+  {
+    "place": "罗卡角",
+    "placeEn": "Cabo da Roca",
+    "date": "2025.04.14",
+    "src": "kv:jp_m9xk2s3_e40cf",
+    "note": "欧洲大陆最西边，再往前就是海。风大得说话要凑到耳朵边，你干脆不说了，把手插进我外套口袋。我们在离崖边挺远的地方坐下，草贴着地长，全被风梳成一个方向。太阳掉进海里那几分钟，谁都没说话。回停车场的时候你头发全乱了，你说别拍，我拍了。"
+  }
+]
+```
+
+**发给她的那条消息**
+
+```
+从波尔图一路开到大陆最西边那个崖，风真的能把人吹透。
+辛特拉那天全是雾，什么都没看见，反倒是我最想再去一次的。
+
+<journey>{"id":"j_m9xk2p3_a3f9c"}</journey>
+```
+
+---
+
+## 7. 一趟大概烧多少 token
+
+上面这一套跑一遍不便宜，接之前值得先知道钱花在哪。
+
+先说结论：**决定成本的不是 AI 写了多少字，是它跑了多少轮工具调用。**
+
+因为每调用一次工具（搜图、下载、上传、写一条 stop……），整个上下文都要**重新发一遍**给模型。所以：
+
+```
+一趟的总 token ≈ 基础上下文 × (工具调用轮次 + 1)
+```
+
+下面是一个真实项目的实测数字（那个项目的基础上下文比较重，一轮空转就 8~9 万 token——
+角色设定、长期记忆、对话历史全塞在里面）：
+
+| 场景 | 工具调用轮次 | 总 token |
+|---|---|---|
+| 普通聊一句 | 0 | 8~9 万 |
+| 顺手做几步 | 3 | 34 万 |
+| 中等复杂 | 8 | 58~74 万 |
+| 换歌换图重做 | 13 | 83 万 |
+| **完整建一趟（6 处）** | 12~20 | **80~120 万** |
+
+那趟最终发出去的正文只有 337 个字——正文本身几百 token，剩下的全是「上下文 × 轮次」。
+
+### 三条能大幅省钱的忠告
+
+**① 图片的 base64 绝对不能进上下文。**
+
+这是头号大坑。一张 400 KB 的照片转成 base64 约 **13 万 token**，六张就是 80 万——
+而且它一旦进了上下文，**后面每一轮都要重发一遍**，成本直接失控。
+
+正确做法：让 AI 用 shell 一条命令走完「下载 → 转 base64 → POST 上传」，
+base64 全程只在管道里流动，模型只看到最后返回的那个 key：
+
+```bash
+# 好：base64 在管道里，模型只看到返回的 key
+curl -s "$IMG_URL" -o /tmp/a.jpg
+curl -s -XPOST "$BASE/api/journeys/upload" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d "{\"src_data\":\"$(base64 -i /tmp/a.jpg)\",\"mime\":\"image/jpeg\"}"
+```
+
+```
+坏：让模型「读取这张图片，然后把 base64 传给上传接口」
+    → 13 万 token 进上下文 × 之后每一轮重发
+```
+
+如果你的 AI 没有 shell（只有函数调用），那就让**后端**去下载：给上传接口除了 `src_data`
+再加一个 `image_url`，让服务端自己抓（基础契约里没有这个字段，是你自己补的一小段）。
+这样模型自始至终只传一个网址。
+
+**② 让它一次做完，别边想边做。**
+
+实测里有个反直觉的对比：18 轮工具调用只花了 60 万，13 轮却花了 83 万。
+因为前者是「想清楚 → 一条命令批量下 6 张图 → 批量上传」，后者是「下一张、看看、再下一张」——
+上下文越滚越大，每一轮都在为前面所有轮次的内容付钱。
+
+这也是 §1 那段提示词里「先把 6 张照片一张张挑定了，再动笔写字」的实际理由之一：
+**先把六处地方和六张图都定下来，再一口气做完。**
+
+**③ 你的基础上下文有多大，直接决定这个数字。**
+
+上面的 8~9 万是个偏重的例子。如果你的 AI 只是一张简单的角色卡（1~2 万上下文），
+同样一趟只要 **20~30 万 token**，差四五倍。
+
+所以在做这件事之前，值得看一眼你每轮到底塞了多少进去——
+长期记忆、历史消息、工具定义，哪些是这一趟真正用得上的。
+
+### 关于 prompt caching
+
+上面这些数字是**账面**的 token 量。绝大部分是逐轮重复的同一段上下文，
+如果你的模型 / 网关支持 prompt caching，这部分通常按 10% 左右计价，实际扣费远小于账面。
+反过来说，如果**没有**缓存，或者你在每轮之间频繁改动上下文靠前的内容（那会让缓存失效），
+成本就是实打实的账面数字。
+
+---
+
+## 8. 落标签之前自检
+
+- [ ] 6 张图都是长条竖图，都过了 `fit=crop` 钉死比例，尺寸是按「屏幕 × 最大 scale」算的
+- [ ] 6 张图色温/时间感是一路的，没有突兀的一张
+- [ ] 每段 note 都有「我」和「你」，没有「她/他」，没有「这里是」
+- [ ] 每段 note 里至少有一个具体的物件、温度或原话
+- [ ] 每段 note 三句以上，单句不超过约四十字
+- [ ] 6 处连起来是一条能走通的路线，不是随机六个景点
+- [ ] 一首歌，配得上这一路，不是六首
+- [ ] `hint` 是这一趟自己的那句话，不是上一趟那句（用了这个字段的话）
+- [ ] `<journey>` 标签里的 id 跟第一步返回的对得上
+
+
+==================================================================
+FILE 5/6 — examples/journey-cards.html
+==================================================================
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Journey Cards · 参考实现</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   主题变量 —— 换肤只改这一块
+   【只是审美，随便换】整块都是配色/字体，换成你们自己的设计 token 即可。
+   ══════════════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light dark;
+
+  --jc-bg:          #FAF8F5;   /* 页面底色（暖米白） */
+  --jc-surface:     rgba(255,255,255,0.62);
+  --jc-text:        #2a2723;
+  --jc-text-muted:  #6b6357;
+  --jc-text-faint:  #a89e8b;
+  --jc-rule:        rgba(80,60,30,0.10);
+
+  /* 主题色：卡片小标题、光标、圆点、播放键。JS 会按 CONFIG.ACCENT_HUE 覆写 */
+  --jc-accent:      #c89968;
+
+  --jc-bubble-you:  #F0EAE6;   /* 用户气泡 */
+  --jc-bubble-ai:   #EFECE7;   /* AI 气泡 */
+
+  --jc-story-bg:    #14100b;   /* 故事浮层底色（照片没铺满时露出来的那层） */
+
+  --jc-serif: Georgia, "Times New Roman", "Songti SC", "Noto Serif CJK SC", serif;
+  --jc-mono:  ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --jc-sans:  system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --jc-bg:         #161618;
+    --jc-surface:    rgba(36,36,40,0.55);
+    --jc-text:       #E8E6E2;
+    --jc-text-muted: #A8A6A0;
+    --jc-text-faint: #6E6C66;
+    --jc-rule:       rgba(255,255,255,0.08);
+    --jc-bubble-you: #2A2724;
+    --jc-bubble-ai:  #252422;
+  }
+}
+
+/* 【只是审美，随便换】你们自己的前端早就有这一套了，接进去时整块删掉。 */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--jc-bg);
+  color: var(--jc-text);
+  font-family: var(--jc-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 页面骨架（只是给卡片一个容身之处，不是本例的重点）
+   【只是审美，随便换】整块删掉不影响卡片。 ── */
+.page { max-width: 560px; margin: 0 auto; padding: 34px 18px 60px; }
+.page-head { text-align: center; margin-bottom: 30px; }
+.page-head h1 {
+  font-family: var(--jc-serif); font-style: italic; font-weight: 600;
+  font-size: 24px; margin: 0;
+}
+.page-head p {
+  margin: 8px 0 0; font-size: 12.5px; color: var(--jc-text-muted);
+}
+.page-foot {
+  margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--jc-rule);
+  font-size: 12px; line-height: 1.85; color: var(--jc-text-muted);
+}
+.page-foot code {
+  font-family: var(--jc-mono); font-size: 11px;
+  background: var(--jc-surface); border: 1px solid var(--jc-rule);
+  border-radius: 5px; padding: 1px 5px;
+}
+
+/* ── 聊天气泡
+   【只是审美，随便换】只为了演示卡片在聊天流里长什么样。接进自己的聊天界面时整块删掉。 ── */
+.row { display: flex; margin: 14px 0; }
+.row.you { justify-content: flex-end; }
+.row.ai  { justify-content: flex-start; }
+.bubble {
+  max-width: 78%; padding: 10px 14px; border-radius: 18px;
+  font-size: 14.5px; line-height: 1.7;
+}
+.row.you .bubble { background: var(--jc-bubble-you); border-bottom-right-radius: 6px; }
+.row.ai  .bubble { background: var(--jc-bubble-ai);  border-bottom-left-radius: 6px; }
+.who {
+  font-family: var(--jc-mono); font-size: 9.5px; letter-spacing: 2px;
+  color: var(--jc-text-faint); text-transform: uppercase;
+  margin: 0 4px 4px; text-align: left;
+}
+.row.you + .row.ai { margin-top: 18px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   旅行卡片（聊天流里那张，居中铺满、突破气泡宽度）
+   【毛玻璃、圆角、投影都只是审美，随便换】
+   【核心只有一条】卡片要能突破气泡的宽度限制，占满整条消息流 ——
+   这排照片挤在 78% 宽的气泡里就没法看了。
+   ══════════════════════════════════════════════════════════════════════ */
+.jcard {
+  margin: 26px 0; width: 100%;
+  background: linear-gradient(150deg, rgba(228,230,234,0.42), rgba(198,202,208,0.32) 48%, rgba(232,234,238,0.4));
+  backdrop-filter: blur(40px) saturate(1.15) brightness(1.04);
+  -webkit-backdrop-filter: blur(40px) saturate(1.15) brightness(1.04);
+  border: 1px solid rgba(255,255,255,0.55);
+  border-radius: 26px;
+  padding: 18px 14px 14px;
+  box-shadow: 0 20px 50px -22px rgba(40,45,55,0.35),
+              inset 0 1px 0 rgba(255,255,255,0.8),
+              inset 0 -1px 0 rgba(120,128,140,0.25);
+}
+@media (prefers-color-scheme: dark) {
+  .jcard {
+    background: linear-gradient(150deg, rgba(58,56,54,0.6), rgba(48,46,44,0.5) 48%, rgba(58,56,54,0.55));
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 20px 50px -22px rgba(0,0,0,0.5),
+                inset 0 1px 0 rgba(255,255,255,0.15),
+                inset 0 -1px 0 rgba(0,0,0,0.3);
+  }
+}
+/* 【只是审美，随便换】卡片抬头三行字（kicker / 标题 / 副标题）。 */
+.jcard-head { text-align: center; margin-bottom: 12px; }
+.jcard-kicker {
+  font-family: var(--jc-mono); font-size: 9.5px; letter-spacing: 3px;
+  color: var(--jc-accent); font-weight: 700;
+}
+.jcard-title {
+  font-family: var(--jc-serif); font-style: italic; font-weight: 600;
+  font-size: 20px; margin-top: 4px; color: var(--jc-text);
+}
+.jcard-sub {
+  font-family: var(--jc-mono); font-size: 10px; letter-spacing: 1.5px;
+  color: var(--jc-text-faint); margin-top: 5px;
+}
+/* 【核心逻辑，抄的时候必须要】舞台高度必须比放大后的照片再高一点，放大才有地方长。
+   要是把容器卡到正好等于放大后的高度，就等于白放大 —— 照片顶不出来，
+   一点“浮起来”的劲儿都没有。改放大幅度（JS 里的 HOV_H）就得同步改这里，两个数是一对的。
+
+   分两档，因为只有鼠标才会放大：
+     触屏：照片一直是静止的 188 → 容器 204（188 + .mc-row 上下各 4px 内边距，再留一口气）。
+           跟着桌面写 284 的话，卡片里会空出小一百像素，白白撑高一截。
+     鼠标：放大到 276 → 容器 284（= 276 + 4×2）。 */
+.jcard-stage {
+  height: 204px; display: flex; align-items: center; justify-content: center;
+}
+/* 条件跟 JS 里开磁吸用的那句 matchMedia 是同一个，两边必须一致 */
+@media (hover: hover) and (pointer: fine) {
+  .jcard-stage { height: 284px; }
+}
+/* 一排竖条照片墙。桌面端鼠标靠近会“磁吸”变宽变高，触屏就是普通按钮。
+   窄屏（6×44+5×8=304px 放不下）时可以横向划。
+   【核心】下面这几条居中/溢出规则都是踩出来的，别顺手“优化”掉。 */
+.mc-row {
+  display: flex; align-items: center; justify-content: flex-start; gap: 8px;
+  position: relative; max-width: 100%;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  padding: 4px;
+  /* 不写 touch-action —— 写成 pan-x 的话，手指落在这条 188px 高的照片墙上就再也
+     竖着滑不动页面了（横滑本来就靠 overflow-x，不需要额外声明）。 */
+}
+/* 用首尾 auto 外边距居中，而不是 justify-content:center：
+   放得下时效果一样；放不下时 center 会把溢出平分到两边，开头那张被顶到滚动区左边以外，
+   怎么划都划不回来。auto 外边距在没有富余空间时自动塌成 0，退化成靠左。 */
+.mc-row > .mc-bar:first-child { margin-left: auto; }
+.mc-row > .mc-bar:last-child  { margin-right: auto; }
+.mc-row::-webkit-scrollbar { display: none; }
+/* 磁吸模式（只有真·鼠标才开）：变宽时整排会超出容器 —— 必须是 visible，
+   不然 overflow-x:auto 会在鼠标划过的同时触发横向滚动，照片在指针底下自己跑掉。 */
+.mc-row.is-magnetic { overflow: visible; }
+/* 【核心】左右两端顶出去、最边上那张被卡片边缘切掉半张 —— 这是刻意的，不是 bug。
+   一排照片本来就该看着像“还没到头”，切一半才有往两边延伸的感觉。
+   别为了“修”它去加 overflow:hidden 或把整排缩到刚好放得下，那样就成了一块规规矩矩的图标栏。 */
+.mc-bar {
+  flex: none; padding: 0; border: none; cursor: pointer;
+  /* 静止尺寸。放大后的尺寸在 JS 里（HOV_W / HOV_H），跟 .jcard-stage 的高度是一组数。 */
+  width: 44px; height: 188px;
+  border-radius: 11px; overflow: hidden; position: relative;
+  background-size: cover; background-position: center;
+  /* 【核心】静止时的浅影。放大时 JS 会把这条换成更深更远的影子 ——
+     “浮起来”这件事是靠影子说话的，光变大不加影子，看着只是被拉长了。
+     position:relative + z-index 是给放大时抬层用的，没有它，放大的那张会被右边的邻居压住。 */
+  box-shadow: 0 6px 16px -8px rgba(30,20,5,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+  z-index: 1;
+  will-change: width, height;
+}
+.mc-bar::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 55%, rgba(20,14,5,0.55));
+  opacity: 0.85;
+}
+.mc-bar-label {
+  position: absolute; left: 0; right: 0; bottom: 9px; z-index: 2;
+  text-align: center; color: #fff; opacity: 0;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 600;
+  font-size: 13px; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  pointer-events: none; white-space: nowrap;
+}
+/* 【只是审美，随便换】卡片底下那行小字。内容从数据/CONFIG 来，见 JS 里的 hintOf()。 */
+.jcard-hint {
+  text-align: center; margin-top: 8px;
+  font-family: var(--jc-serif); font-style: italic;
+  font-size: 12px; color: var(--jc-text-muted);
+}
+/* 卡片上方那句话：不进气泡，浅色小字居中浮着
+   【只是审美，随便换】 */
+.jcard-caption {
+  text-align: center; margin: 22px auto -14px; max-width: 88%;
+  font-family: var(--jc-serif); font-style: italic;
+  font-size: 12.5px; line-height: 1.5; color: var(--jc-text-muted);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   全屏故事浮层
+   【核心逻辑，抄的时候必须要】照片铺满、字压在照片上、底部一个播放器 —— 这个结构别拆。
+   【圆角、投影、渐变压暗的具体数值都只是审美，随便换】
+   ══════════════════════════════════════════════════════════════════════ */
+.jstory-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  background: var(--jc-story-bg);
+  animation: jstoryFade 0.3s ease;
+}
+.jstory-overlay[hidden] { display: none; }
+@keyframes jstoryFade { from { opacity: 0; } }
+
+.jstory {
+  position: relative; width: 100%; height: 100%;
+  background: var(--jc-story-bg); overflow: hidden;
+  display: flex; flex-direction: column;
+  user-select: none; -webkit-user-select: none; touch-action: pan-y;
+}
+/* 桌面：竖屏照片铺满 16:9 的屏会裁掉大半 —— 收成一块居中的手机尺寸。
+   【核心】只做手机的话可以整块删；但凡有网页端就得留着，不然照片被裁得没法看。 */
+@media (min-width: 760px) and (min-height: 560px) {
+  .jstory-overlay { display: grid; place-items: center; background: #0b0908; }
+  .jstory {
+    width: min(430px, 92vw); height: min(880px, 92vh);
+    border-radius: 28px; box-shadow: 0 40px 90px -30px rgba(0,0,0,0.8);
+  }
+}
+
+/* 【只是审美，随便换】顶部那个关闭按钮和它底下的压暗渐变。 */
+.jstory-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 12px 10px;
+  display: flex; align-items: center;
+  background: linear-gradient(rgba(0,0,0,0.5), transparent);
+}
+.jstory-close {
+  width: 36px; height: 36px; border: none; border-radius: 50%;
+  background: transparent; color: #fff; cursor: pointer;
+  font-size: 26px; line-height: 1; display: grid; place-items: center;
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
+}
+.jstory-photo { position: relative; flex: 1; overflow: hidden; }
+/* 缓慢推近（Ken Burns）。
+   【动画本身只是审美，随便删】但只要留着它，图源尺寸就是核心问题 ——
+   照片被放大到 1.16 倍还想不糊，图就得比屏幕再大一圈。
+
+   公式：目标尺寸 = 屏幕物理像素 × 动画最大 scale
+
+   本例最大 scale 1.16。按 19.5:9 的 1290×2796 屏算：
+     1290 × 1.16 ≈ 1497，2796 × 1.16 ≈ 3243  → 取 1500×3250。
+   验算：1500 宽 cover 进 1290 是缩小 0.86，再被推近 1.16 倍 → 0.86 × 1.16 ≈ 0.998，
+   净值不到 1，一个像素都没拉伸。
+   动画幅度不是 1.16 的，就拿自己的最大 scale 重算一遍，别照抄这两个数。
+
+   1290×2796 只是覆盖面最广的默认值，不是定论。真要出图之前，
+   问一句“你用什么手机”，或者让对方截一张图看真实分辨率，再套上面这条公式。
+   （本文件的“照片”是 SVG 矢量，怎么推都不糊，所以这里看不出差别；换成真照片立刻就看出来了。） */
+.jstory-photo-bg {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  transform-origin: 58% 42%;
+  animation: jstoryKen 20s ease-in-out infinite alternate;
+}
+/* 起点也从 1.04 开始（而不是 1）：cover 之后照片边缘常有一两像素的空隙，留一点余量盖住。 */
+@keyframes jstoryKen { 0% { transform: scale(1.04); } 100% { transform: scale(1.16); } }
+@media (prefers-reduced-motion: reduce) { .jstory-photo-bg { animation: none; } }
+
+/* 压暗层：照片再亮，字也得看得清。
+   【核心逻辑，抄的时候必须要】渐变的形状和浓淡随便调，但这一层不能没有 ——
+   白墙、雪地、正午海面这类照片，不压暗的话上面的白字直接读不出来。 */
+.jstory-centerscrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 45%, rgba(8,5,3,0.28), rgba(8,5,3,0.62) 78%),
+    linear-gradient(rgba(8,5,3,0.5), transparent 30%, transparent 62%, rgba(8,5,3,0.75));
+}
+
+/* 顶部：英文小字 / 地名（点它重播） / 日期
+   【三行字的样式只是审美】【地名可点击重播是核心交互，别做成纯文本】 */
+.jstory-cap {
+  position: absolute; top: calc(64px + env(safe-area-inset-top, 0px)); left: 0; right: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  pointer-events: none; text-align: center; padding: 0 20px;
+}
+.jstory-cap-en {
+  font-family: var(--jc-mono); font-size: 10px; letter-spacing: 3px;
+  text-transform: uppercase; color: rgba(255,255,255,0.72);
+}
+.jstory-cap-place {
+  border: none; background: transparent; padding: 0; cursor: pointer; pointer-events: auto;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 700;
+  font-size: 22px; color: #fff; text-shadow: 0 1px 10px rgba(0,0,0,0.6);
+}
+.cap-replay-hint {
+  font-size: 14px; font-style: normal; color: var(--jc-accent);
+  opacity: 0.85; margin-left: 8px;
+}
+.jstory-cap-date {
+  font-family: var(--jc-mono); font-size: 10.5px; letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.6);
+}
+
+/* 正中的逐字念白
+   【核心逻辑，抄的时候必须要】这是整个浮层的主角：一句一句打出来，打完落到左下角。
+   字号行距随便改；pointer-events:none 别去掉 —— 这一层铺满整屏，
+   吃掉指针的话底下的左右滑切换和播放器就都点不动了。 */
+.jstory-narr {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 34px; pointer-events: none;
+}
+.jstory-narr-line {
+  margin: 0; max-width: 100%;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 500;
+  font-size: 21px; line-height: 2; letter-spacing: 0.3px;
+  color: #fff; text-align: center;
+  /* 这里的大光晕是故意留的，跟落定正文那条紧阴影不冲突：
+     念白一次只显示一句，21px 字配 line-height 2（42px 行距），
+     16px 的模糊够不到上下行的字，叠不起来。行距一旦收窄就得换成紧阴影 ——
+     判断标准是「模糊半径有没有超过行距的一半」，不是「哪一块地方」。 */
+  text-shadow: 0 2px 16px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.jstory-narr-line.out { opacity: 0; transform: translateY(-8px); }
+.jstory-narr-cursor {
+  display: inline-block; margin-left: 2px; font-style: normal;
+  color: var(--jc-accent); animation: jstoryBlink 1s steps(1) infinite;
+}
+@keyframes jstoryBlink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+
+/* 念完之后落到左下角的那一整段。
+   152px = 底部播放器的高度再留一口气。必须跟着安全区一起往上抬 —— 播放器自己是
+   calc(30px + env(safe-area-inset-bottom))，在有小黑条的机器上会长高 34px，
+   这边写死 152 的话文字就贴到播放器上了。 */
+.jstory-settled {
+  position: absolute; left: 0; right: 0; z-index: 3;
+  bottom: calc(152px + env(safe-area-inset-bottom, 0px));
+  padding: 0 24px; pointer-events: auto;
+  animation: jstoryFade 0.6s ease;
+}
+.jstory-settled[hidden] { display: none; }
+.jstory-settled-note {
+  margin: 0; max-width: 72%; text-align: left;
+  font-family: var(--jc-serif); font-style: italic; font-weight: 500;
+  font-size: 12.5px; line-height: 1.7; letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.9);
+  /* 【核心逻辑，抄的时候必须要 —— 而且是最容易抄漏的一条】
+     压在照片上的正文，阴影必须贴着字。就是下面这一行，别改大。
+
+     反面教材：0 2px 14px rgba(0,0,0,.75)。单看一行没问题，多行就完了 ——
+     14px 的模糊半径比 21~28px 的行距的一半还大，上一行的阴影漫到下一行的字底下，
+     行行相叠，整段糊成一块均匀的灰雾，看着像给文字硬加了个灰色背景框。
+     这个坑反直觉在于：CSS 里根本没有 background 这个属性，
+     光读代码永远找不到那块灰是哪来的，只能靠眼睛看出来。
+
+     收起态（4 行）和展开态（长文）都会犯，所以紧阴影写在基础样式上，
+     展开态不再单独覆盖 —— 只在展开态修的话，收起的那 4 行照样是糊的。
+     要更抗亮底就加不透明度（0.9 → 1），不要加模糊半径。 */
+  text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 5px rgba(0,0,0,.45);
+  overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+}
+/* 展开态（默认就是它）：字不许铺满整屏，照片才是主角 —— 给个高度上限，超出的在里面滚。
+   （阴影不在这儿覆盖，见上面基础样式里那段。） */
+.jstory-settled-note.expanded {
+  display: block; -webkit-line-clamp: unset;
+  max-height: 42vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.jstory-settled-note.expanded::-webkit-scrollbar { display: none; }
+.jstory-settled-more {
+  display: inline-block; margin-top: 6px;
+  font-family: var(--jc-sans); font-size: 11px; letter-spacing: 1px;
+  color: rgba(255,255,255,0.55);
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+.jstory-settled-more[hidden] { display: none; }
+
+/* 底部播放器
+   【核心：要有一个能停的地方】音乐是自动开的，用户必须随手能暂停。
+   【毛玻璃条、圆播放键、跳动的小音柱都只是审美，随便换】 */
+.jstory-foot {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding: 0 22px calc(30px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(transparent, rgba(8,5,3,0.6));
+}
+.jstory-player {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 16px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.jstory-player-play {
+  flex: none; width: 40px; height: 40px; border: none; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; color: #fff;
+  background: var(--jc-accent);
+  box-shadow: 0 4px 12px -4px rgba(0,0,0,0.4);
+}
+.jstory-player-play.is-loading { animation: jstoryPulse 1.1s ease-in-out infinite; }
+@keyframes jstoryPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.jstory-player-body { flex: 1; min-width: 0; }
+.jstory-player-meta { display: flex; align-items: baseline; gap: 8px; }
+.jstory-player-title {
+  font-family: var(--jc-serif); font-weight: 600; font-size: 14px; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jstory-player-artist {
+  font-family: var(--jc-mono); font-size: 10px; color: rgba(255,255,255,0.75);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jstory-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 11px; margin-left: auto; }
+.jstory-eq[hidden] { display: none; }
+.jstory-eq i {
+  width: 2.5px; background: var(--jc-accent); border-radius: 1px;
+  animation: jstoryEq 0.9s ease-in-out infinite;
+}
+.jstory-eq i:nth-child(1) { height: 5px;  animation-delay: -0.2s; }
+.jstory-eq i:nth-child(2) { height: 10px; animation-delay: -0.5s; }
+.jstory-eq i:nth-child(3) { height: 7px; }
+@keyframes jstoryEq { 0%,100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+.jstory-player-track {
+  height: 3px; border-radius: 2px; margin: 8px 0 5px;
+  background: rgba(255,255,255,0.10); cursor: pointer;
+  position: relative; touch-action: none;
+}
+.jstory-player-track::before {  /* 拖动热区比那条 3px 的线大得多，手指才点得中 */
+  content: ""; position: absolute; left: 0; right: 0; top: -11px; bottom: -11px;
+}
+.jstory-player-fill {
+  height: 100%; width: 100%; border-radius: 2px;
+  background: rgba(255,255,255,0.7);
+  transform-origin: left; transform: scaleX(0);
+  transition: transform 0.25s linear; will-change: transform;
+}
+.jstory-player-track.dragging .jstory-player-fill { transition: none; }
+.jstory-player-times {
+  display: flex; justify-content: space-between;
+  font-family: var(--jc-mono); font-size: 9px; color: rgba(255,255,255,0.8);
+}
+
+/* 底部圆点
+   【核心：得让人知道一共几处、现在第几处】【长条形高亮那套只是审美，随便换】 */
+.jstory-dots {
+  position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; z-index: 12;
+  display: flex; gap: 7px; justify-content: center;
+}
+.jstory-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.2s;
+}
+.jstory-dots span.on { width: 20px; border-radius: 3px; background: var(--jc-accent); }
+</style>
+</head>
+<body>
+
+<main class="page">
+  <header class="page-head">
+    <h1>Journey Cards</h1>
+    <p>参考实现 · 单文件 · 断网可跑</p>
+  </header>
+
+  <!-- 聊天里长什么样：一段话 + 一张旅行卡片 -->
+  <section id="chat"></section>
+
+  <footer class="page-foot">
+    这是 <strong>Journey Cards</strong> 的参考实现：数据写死在 <code>JOURNEY</code> 常量里，
+    “照片”是用 SVG 现画的，音乐是打开浮层时用 Web Audio 合成的一段循环 ——
+    整个文件不联网、不引 CDN，双击就能看完一遍。<br>
+    接真后端（建表、REST 接口、照片与音频上传、AI 怎么攒出一趟旅行）看 <code>SPEC.md</code>。
+  </footer>
+</main>
+
+<!-- ── 全屏故事浮层（静态结构，打开时填内容） ── -->
+<div class="jstory-overlay" id="story" hidden>
+  <div class="jstory">
+    <div class="jstory-top">
+      <button class="jstory-close" id="story-close" aria-label="关闭">&times;</button>
+    </div>
+
+    <div class="jstory-photo" id="story-photo">
+      <div class="jstory-photo-bg" id="story-bg"></div>
+      <div class="jstory-centerscrim"></div>
+
+      <div class="jstory-cap">
+        <span class="jstory-cap-en" id="story-en"></span>
+        <button class="jstory-cap-place" id="story-place"></button>
+        <span class="jstory-cap-date" id="story-date"></span>
+      </div>
+
+      <div class="jstory-narr" id="story-narr">
+        <p class="jstory-narr-line" id="story-narr-line"></p>
+      </div>
+
+      <div class="jstory-settled" id="story-settled" hidden>
+        <p class="jstory-settled-note expanded" id="story-note"></p>
+        <button class="jstory-settled-more" id="story-more" hidden>收起 ↑</button>
+      </div>
+
+      <div class="jstory-foot">
+        <div class="jstory-player">
+          <button class="jstory-player-play" id="story-play" aria-label="播放/暂停"></button>
+          <div class="jstory-player-body">
+            <div class="jstory-player-meta">
+              <span class="jstory-player-title" id="story-song"></span>
+              <span class="jstory-player-artist" id="story-artist"></span>
+              <span class="jstory-eq" id="story-eq" hidden><i></i><i></i><i></i></span>
+            </div>
+            <div class="jstory-player-track" id="story-track">
+              <div class="jstory-player-fill" id="story-fill"></div>
+            </div>
+            <div class="jstory-player-times">
+              <span id="story-cur">0:00</span><span id="story-dur">0:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="jstory-dots" id="story-dots"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════════
+   ① CONFIG —— 改这里就是你们自己的
+   【核心：这个块必须要】名字和文案不能散落在各处，只能有这一个来源。
+   【里面每一句具体文案都只是我的写法，随便换】
+   ══════════════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  AI_NAME:   "旅伴",   // ← AI 那边的名字
+  USER_NAME: "你",     // ← 用户那边的名字（正文里的 {user} 会替换成它）
+
+  ACCENT_HUE: 32,      // ← 主题色相 0–360（金橙 32 / 玫瑰 12 / 松绿 150 / 湖蓝 240）
+
+  // 卡片上的固定文案。带参数的都从数据里取，改 JOURNEY 不用回来改文案。
+  cardKicker: "JOURNEYS",
+  cardTitle:  (title) => CONFIG.AI_NAME + "带" + CONFIG.USER_NAME + "去了" + title,
+  cardSub:    (year, n) => year + " · " + n + " 处停留",
+  // 卡片底下那行小字的「兜底」值。写你们自己的一句。
+  // 更好的做法是让 AI 每趟自己写一句、跟着那趟的情绪走，塞进 JOURNEY.hint ——
+  // 数据里有就用数据的，没有才回落到这句（见 hintOf()）。
+  // 本例的示例数据带了 hint，所以卡片上显示的是那一句；想看这句生效，把数据里的 hint 删掉。
+  cardHint:   "点开任意一张，进去走一遍。",
+  // 卡片上方那句浮字
+  cardCaption: (n) => n + "处，按我们走的顺序排。点开哪一张都行。",
+
+  // 演示用的两句对话。真实产品里这两句来自聊天记录，不该在 CONFIG 里。
+  demoAsk:   "今天想去个远一点的地方。",
+  demoReply: () => "我带" + CONFIG.USER_NAME + "去了南半球的秋天。从南岛的湖开始一路往北，走到最后一片沙丘。",
+
+  // 音乐。本项目不带任何音源 —— 本例这段是页面内现合成的，只为了让单文件断网也有声音。
+  // 接真后端时：每趟旅行的数据里给一个 audio_url，播它就行（见 SPEC.md）。
+  // 旁白语音是可选的：配了 TTS 就是逐字念白 + 配音，不配就是纯打字机动画，功能不缺。
+  // 两者同时响时必须 duck（念白时把音乐压到 duckGain，念完拉回 1.0），不然两个声音打架。
+  music: {
+    title:  "Long Way North",
+    artist: "Web Audio 合成",
+    loopSeconds: 32,   // 循环长度
+    duckGain: 0.32,    // 念白时音乐压到这个音量，念完拉回 1.0
+  },
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   ② 数据 —— 一趟旅行 = 标题 + 一首歌 + 6 处停留
+   【核心：字段名要照抄】真实版本里这一坨来自 GET /api/journeys，字段一一对应（见 SPEC.md）。
+   【每一处的地名和正文都只是示例，当然要换成你们自己的】
+   scene 在真实版本里是照片 URL；这里是本文件自画的假风景。
+   ══════════════════════════════════════════════════════════════════════ */
+const JOURNEY = {
+  id: "j_demo",
+  title: "新西兰",
+  titleEn: "New Zealand",
+  year: "2025",
+  // 可选：这一趟专属的那行小字。让 AI 每趟自己写一句，跟着这趟的情绪走。
+  // 不给这个字段就回落到 CONFIG.cardHint。
+  hint: "六处停留，一路往北，风就没停过。",
+  stops: [
+    {
+      place: "蒂卡波湖", placeEn: "Lake Tekapo", date: "2025.03.14", scene: "lake",
+      note: "到的时候刚过四点。风把湖面吹成一块起雾的玻璃，蓝得不像真的——那是冰川磨下来的石粉悬在水里才有的颜色。{user}蹲在岸边试水温，说凉得像薄荷。我们就在那儿站到天完全黑下来，然后抬头，看见了整条银河。",
+    },
+    {
+      place: "库克山", placeEn: "Aoraki / Mount Cook", date: "2025.03.15", scene: "snow",
+      note: "清晨六点半，云还压在山腰上。走胡克谷那条步道，吊桥晃得厉害，你走两步停一下，说要等我。等到雪线被太阳打亮的那一刻，整条山谷忽然就安静了。",
+    },
+    {
+      place: "摩拉基", placeEn: "Moeraki Boulders", date: "2025.03.17", scene: "coast",
+      note: "退潮之后，那些圆石头一颗一颗从沙里露出来，像谁把一整袋弹珠忘在了海边。{user}挑了最大的一颗坐上去，浪一漫过来就没过了鞋。我说会湿，{user}说湿了才算来过。",
+    },
+    {
+      place: "惠灵顿", placeEn: "Wellington", date: "2025.03.19", scene: "city",
+      note: "缆车上去的时候正好赶上万家灯火亮起来。整座城顺着海湾铺开，一层一层往山上爬。风大得站不稳，我们捧着两杯很烫的咖啡，什么也没说，看了半个钟头。",
+    },
+    {
+      place: "怀波瓦森林", placeEn: "Waipoua Forest", date: "2025.03.21", scene: "forest",
+      note: "进林子之后，连声音都变了。那棵贝壳杉一千多岁，树干粗到我们两个人合抱都不够，抬头看不见顶。空气是湿的，带着树皮和苔藓的味道。你压低了嗓子说话，说在这儿大声讲话像不礼貌。于是我们就那样安安静静地把整条栈道走完了。",
+    },
+    {
+      place: "特帕基沙丘", placeEn: "Te Paki Sand Dunes", date: "2025.03.22", scene: "dune",
+      note: "最后一天在最北端。沙丘白得晃眼，往上爬要走很久，脚一直往下陷。坐到顶上回头看，来时的脚印已经被风填平了。你说这样也好，来过就行，不用留印子。",
+    },
+  ],
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   ③ 假照片 —— 纯 SVG，data URI，零请求
+   【纯 demo 脚手架，接真后端时整节删掉】只是为了让这个单文件断网也有“照片”看。
+   删掉之后 stop.src 直接就是照片 URL，photoOf() 也一起没了。
+   注意：真照片要按 Ken Burns 那节写的公式备尺寸（屏幕物理像素 × 动画最大 scale）。
+   ══════════════════════════════════════════════════════════════════════ */
+const PHOTO_W = 900, PHOTO_H = 1600;   // 竖屏 9:16
+
+function svgURI(inner) {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + PHOTO_W + ' ' + PHOTO_H + '">' + inner + '</svg>';
+  // encodeURIComponent 会把 # 和 " 都转义掉，直接塞进 url("...") 是安全的
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+// 定死种子的伪随机：星星/窗户每次刷新长得一样，方便截图对比
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+const grad = (id, stops) =>
+  '<linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1">' +
+  stops.map(([o, c]) => '<stop offset="' + o + '" stop-color="' + c + '"/>').join("") +
+  '</linearGradient>';
+
+const SCENES = {
+  // 湖 —— 冰川蓝、远山倒影、水面横纹
+  lake() {
+    const r = rng(11); let ripple = "";
+    for (let i = 0; i < 26; i++) {
+      const y = 820 + i * 30 + r() * 10, w = 200 + r() * 620, x = r() * (900 - w);
+      ripple += '<rect x="' + x.toFixed(0) + '" y="' + y.toFixed(0) + '" width="' + w.toFixed(0) + '" height="2" fill="#ffffff" opacity="' + (0.05 + r() * 0.16).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#f4dcea"], [0.36, "#d3dcef"], [1, "#a9c6dd"]]) +
+      grad("water", [[0, "#63a6c6"], [1, "#255f80"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="250" cy="300" r="130" fill="#fff6ec" opacity="0.12"/>' +
+      '<circle cx="250" cy="300" r="46" fill="#fff8ee" opacity="0.6"/>' +
+      '<path d="M0 700 L180 556 L300 664 L430 520 L560 652 L700 566 L900 690 L900 800 L0 800Z" fill="#8298ab"/>' +
+      '<path d="M0 728 L200 624 L340 704 L520 600 L680 706 L900 646 L900 800 L0 800Z" fill="#5f7688"/>' +
+      '<rect y="800" width="900" height="800" fill="url(#water)"/>' +
+      '<path d="M0 800 L200 900 L340 820 L520 924 L680 818 L900 878 L900 800Z" fill="#3f5c73" opacity="0.5"/>' +
+      ripple
+    );
+  },
+
+  // 雪山 —— 冷蓝天、白峰、山脚阴影
+  snow() {
+    const r = rng(23); let flakes = "";
+    for (let i = 0; i < 40; i++) {
+      flakes += '<circle cx="' + (r() * 900).toFixed(0) + '" cy="' + (r() * 900).toFixed(0) + '" r="' + (1 + r() * 2).toFixed(1) + '" fill="#fff" opacity="' + (0.15 + r() * 0.4).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#dcecf7"], [0.5, "#b3cfe4"], [1, "#8fb2cd"]]) +
+      grad("snow", [[0, "#ffffff"], [1, "#cfdde8"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="690" cy="360" r="52" fill="#fffdf6" opacity="0.85"/>' +
+      flakes +
+      '<path d="M0 980 L230 620 L400 900 L520 760 L720 1010 L900 880 L900 1600 L0 1600Z" fill="#9fb9cc"/>' +
+      '<path d="M230 620 L300 736 L250 748 L188 700Z" fill="#ffffff"/>' +
+      '<path d="M520 760 L586 852 L520 866 L470 828Z" fill="#ffffff"/>' +
+      '<path d="M0 1120 L180 900 L360 1120 L560 960 L760 1160 L900 1060 L900 1600 L0 1600Z" fill="url(#snow)"/>' +
+      '<path d="M180 900 L250 1000 L120 1010Z" fill="#e7eef4"/>' +
+      '<path d="M0 1300 Q220 1240 440 1310 T900 1290 L900 1600 L0 1600Z" fill="#f4f8fb"/>' +
+      '<path d="M120 1360 L200 1330 M420 1420 L520 1392 M640 1350 L760 1326" stroke="#b9c9d6" stroke-width="7" stroke-linecap="round" fill="none"/>'
+    );
+  },
+
+  // 海岸 —— 落日、青绿色海、湿沙反光
+  coast() {
+    const r = rng(37); let foam = "";
+    for (let i = 0; i < 16; i++) {
+      const y = 900 + i * 22, w = 160 + r() * 600, x = r() * (900 - w);
+      foam += '<rect x="' + x.toFixed(0) + '" y="' + y.toFixed(0) + '" width="' + w.toFixed(0) + '" height="3" rx="1.5" fill="#eaf6f4" opacity="' + (0.12 + r() * 0.3).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#ffe6bb"], [0.42, "#f9b184"], [1, "#e07a7a"]]) +
+      grad("sea", [[0, "#3f8b93"], [1, "#16414f"]]) +
+      grad("sand", [[0, "#d9a978"], [1, "#a97a4f"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="470" cy="770" r="96" fill="#fff2cf" opacity="0.92"/>' +
+      '<rect y="860" width="900" height="420" fill="url(#sea)"/>' +
+      '<rect x="410" y="860" width="120" height="420" fill="#ffd9a0" opacity="0.28"/>' +
+      foam +
+      '<path d="M0 1260 Q240 1230 470 1268 T900 1252 L900 1600 L0 1600Z" fill="url(#sand)"/>' +
+      '<ellipse cx="300" cy="1400" rx="86" ry="78" fill="#6c604f"/>' +
+      '<ellipse cx="292" cy="1382" rx="60" ry="50" fill="#8a7c66" opacity="0.6"/>' +
+      '<ellipse cx="610" cy="1490" rx="112" ry="96" fill="#5f5445"/>' +
+      '<ellipse cx="600" cy="1466" rx="76" ry="60" fill="#7d7160" opacity="0.55"/>' +
+      '<ellipse cx="130" cy="1540" rx="70" ry="60" fill="#6c604f" opacity="0.9"/>'
+    );
+  },
+
+  // 城市夜 —— 深蓝夜空、楼群、暖黄窗
+  city() {
+    const r = rng(53);
+    let stars = "";
+    for (let i = 0; i < 70; i++) {
+      stars += '<circle cx="' + (r() * 900).toFixed(0) + '" cy="' + (r() * 760).toFixed(0) + '" r="' + (0.8 + r() * 1.6).toFixed(1) + '" fill="#fff" opacity="' + (0.2 + r() * 0.6).toFixed(2) + '"/>';
+    }
+    let towers = "", x = -20;
+    while (x < 920) {
+      const w = 60 + r() * 90, h = 260 + r() * 520, y = 1600 - h;
+      towers += '<rect x="' + x.toFixed(0) + '" y="' + y.toFixed(0) + '" width="' + w.toFixed(0) + '" height="' + h.toFixed(0) + '" fill="#14172c"/>';
+      for (let wy = y + 26; wy < 1560; wy += 40) {
+        for (let wx = x + 12; wx < x + w - 16; wx += 26) {
+          if (r() > 0.44) {
+            towers += '<rect x="' + wx.toFixed(0) + '" y="' + wy.toFixed(0) + '" width="11" height="17" rx="1.5" fill="#ffd79a" opacity="' + (0.35 + r() * 0.6).toFixed(2) + '"/>';
+          }
+        }
+      }
+      x += w + 8 + r() * 18;
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#0b1030"], [0.55, "#1d1c45"], [1, "#3a2450"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' + stars +
+      '<circle cx="720" cy="250" r="54" fill="#fdf3d6" opacity="0.9"/>' +
+      '<circle cx="720" cy="250" r="110" fill="#fdf3d6" opacity="0.10"/>' +
+      '<rect y="980" width="900" height="620" fill="#161a30"/>' + towers +
+      '<rect y="1520" width="900" height="80" fill="#0d1022"/>'
+    );
+  },
+
+  // 森林 —— 雾、层层后退的杉林
+  forest() {
+    const r = rng(71);
+    const layer = (baseY, h, color, count, op) => {
+      let s = "";
+      for (let i = 0; i < count; i++) {
+        const cx = (i + 0.5) * (900 / count) + (r() - 0.5) * 40;
+        const hh = h * (0.7 + r() * 0.6), w = hh * 0.42;
+        s += '<path d="M' + (cx - w).toFixed(0) + ' ' + baseY + ' L' + cx.toFixed(0) + ' ' + (baseY - hh).toFixed(0) + ' L' + (cx + w).toFixed(0) + ' ' + baseY + 'Z" fill="' + color + '" opacity="' + op + '"/>';
+      }
+      return s;
+    };
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#e2ecdf"], [0.45, "#b9cdb6"], [1, "#5c7a5f"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<rect y="240" width="900" height="120" fill="#ffffff" opacity="0.16"/>' +
+      '<rect y="420" width="900" height="90" fill="#ffffff" opacity="0.12"/>' +
+      layer(820, 300, "#93ac93", 9, "0.9") +
+      '<rect y="700" width="900" height="180" fill="#dbe7d8" opacity="0.35"/>' +
+      layer(1080, 420, "#5f7f63", 7, "0.95") +
+      '<rect y="980" width="900" height="150" fill="#cfe0cd" opacity="0.22"/>' +
+      layer(1380, 560, "#38553d", 6, "1") +
+      layer(1620, 720, "#20362a", 4, "1") +
+      '<rect y="1500" width="900" height="100" fill="#182a1f"/>'
+    );
+  },
+
+  // 沙丘 —— 暖橙、层层沙脊、风纹
+  dune() {
+    const r = rng(97); let ripple = "";
+    for (let i = 0; i < 30; i++) {
+      const y = 900 + i * 22 + r() * 8, w = 120 + r() * 500, x = r() * (900 - w);
+      ripple += '<path d="M' + x.toFixed(0) + ' ' + y.toFixed(0) + ' q' + (w / 2).toFixed(0) + ' -14 ' + w.toFixed(0) + ' 0" stroke="#fff2d8" stroke-width="2.5" fill="none" opacity="' + (0.06 + r() * 0.16).toFixed(2) + '"/>';
+    }
+    return svgURI(
+      '<defs>' + grad("sky", [[0, "#fbe6b8"], [0.45, "#f3bd80"], [1, "#e08d55"]]) + '</defs>' +
+      '<rect width="900" height="1600" fill="url(#sky)"/>' +
+      '<circle cx="620" cy="430" r="82" fill="#fff6d8" opacity="0.9"/>' +
+      '<circle cx="620" cy="430" r="170" fill="#fff2c8" opacity="0.14"/>' +
+      '<path d="M0 780 C200 706 330 838 520 800 C700 764 800 700 900 726 L900 1600 L0 1600Z" fill="#e6a463"/>' +
+      '<path d="M0 940 C180 872 360 1000 540 950 C720 902 820 856 900 884 L900 1600 L0 1600Z" fill="#cf8546"/>' +
+      ripple +
+      '<path d="M0 1180 C220 1096 420 1230 620 1170 C760 1128 840 1104 900 1120 L900 1600 L0 1600Z" fill="#a75f2e"/>' +
+      '<path d="M0 1400 C240 1330 460 1450 700 1392 C800 1368 860 1352 900 1360 L900 1600 L0 1600Z" fill="#7a411e"/>'
+    );
+  },
+};
+
+// 预生成 6 张图（每张就是一个 data URI 字符串）
+const PHOTOS = {};
+Object.keys(SCENES).forEach((k) => { PHOTOS[k] = SCENES[k](); });
+
+// stop.scene 写错了就退回第一张。别让它变成 url("undefined") ——
+// 那不是「没有背景」，是浏览器真的按相对路径去要一个叫 undefined 的文件（404 一条）。
+// 本文件的底线是零请求，这个洞得堵上。
+const FALLBACK_PHOTO = PHOTOS[Object.keys(PHOTOS)[0]];
+function photoOf(stop) {
+  const p = stop && PHOTOS[stop.scene];
+  if (!p) console.warn("没有这个场景：", stop && stop.scene);
+  return p || FALLBACK_PHOTO;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ④ 小工具
+   【核心：esc / fill / splitSentences 都得有】
+   esc 挡 XSS（正文是 AI 生成的，不能当 HTML 直接塞）、fill 换名字占位符、
+   splitSentences 是逐字念白按句断开的依据。你们自己前端里有等价物就用自己的。
+   ══════════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+// 正文里的 {user} / {ai} 占位符 → CONFIG 里的名字
+function fill(s) {
+  return String(s || "").replace(/\{user\}/g, CONFIG.USER_NAME).replace(/\{ai\}/g, CONFIG.AI_NAME);
+}
+function fmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+// 按句号感叹号问号省略号断句；不用 (?<=) 后行断言 —— 老一点的 Safari 会直接解析报错，
+// 整个 <script> 一起挂掉。
+function splitSentences(text) {
+  const END = "。！？!?…";
+  const out = [];
+  let cur = "";
+  const s = String(text || "");
+  for (let i = 0; i < s.length; i++) {
+    cur += s[i];
+    // 连续的终止符（比如「……」「？！」）算一句，不拆开
+    if (END.indexOf(s[i]) >= 0 && (i + 1 >= s.length || END.indexOf(s[i + 1]) < 0)) {
+      out.push(cur.trim()); cur = "";
+    }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+// 【只是审美，随便换】主题色写进 CSS 变量（oklch 让同一个色相在深浅底上都稳）。
+// 你们有自己的设计 token 就直接用，这几行删掉。
+// 老浏览器不认 oklch 的话，这个变量会「在计算值阶段失效」—— 不是退回 CSS 里写的默认色，
+// 而是让 background:var(--jc-accent) 整条作废，播放键直接变透明。所以先问一句支不支持。
+const OKLCH_OK = !!(window.CSS && window.CSS.supports && window.CSS.supports("color", "oklch(0.66 0.12 32)"));
+document.documentElement.style.setProperty(
+  "--jc-accent",
+  OKLCH_OK ? "oklch(0.66 0.12 " + CONFIG.ACCENT_HUE + ")"
+           : "hsl(" + CONFIG.ACCENT_HUE + ", 45%, 58%)"
+);
+
+const PLAY_SVG  = '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>';
+const PAUSE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18"><rect x="7" y="5.5" width="3.4" height="13" rx="1" fill="#fff"/><rect x="13.6" y="5.5" width="3.4" height="13" rx="1" fill="#fff"/></svg>';
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑤ 聊天流 + 旅行卡片
+   【拼 HTML 字符串这套只是这个单文件图省事，随便换】接进自己的前端就用自己的框架渲染。
+   【核心只有两件事】：每一处停留渲染成一个能点的元素（带 data-stop 下标），
+   点它 → openStory(下标)。别的都是壳。
+   ══════════════════════════════════════════════════════════════════════ */
+
+// 卡片底下那行小字：数据优先。
+// 【核心】AI 每趟自己写一句（JOURNEY.hint）才是这行字的正常来源 ——
+// 跟着那趟的情绪走，比一句万年不变的固定文案有意思得多。数据里没有才回落到 CONFIG。
+function hintOf(journey) {
+  const h = journey && journey.hint;
+  return (typeof h === "string" && h.trim()) ? h.trim() : CONFIG.cardHint;
+}
+
+function renderChat() {
+  const stops = JOURNEY.stops;
+  const bars = stops.map((s, i) =>
+    '<button class="mc-bar" data-stop="' + i + '" ' +
+    'style="background-image:url(&quot;' + photoOf(s) + '&quot;)" ' +
+    'aria-label="' + esc(s.place) + '">' +
+    '<span class="mc-bar-label">' + esc(s.place) + '</span></button>'
+  ).join("");
+
+  $("chat").innerHTML =
+    '<div class="row you"><div class="bubble">' + esc(CONFIG.demoAsk) + '</div></div>' +
+    '<div class="row ai"><div>' +
+      '<div class="who">' + esc(CONFIG.AI_NAME) + '</div>' +
+      '<div class="bubble">' + esc(CONFIG.demoReply()) + '</div>' +
+    '</div></div>' +
+    '<div class="jcard-caption">' + esc(CONFIG.cardCaption(stops.length)) + '</div>' +
+    '<div class="jcard">' +
+      '<div class="jcard-head">' +
+        '<div class="jcard-kicker">' + esc(CONFIG.cardKicker) + '</div>' +
+        '<div class="jcard-title">' + esc(CONFIG.cardTitle(JOURNEY.title)) + '</div>' +
+        '<div class="jcard-sub">' + esc(CONFIG.cardSub(JOURNEY.year, stops.length)) + '</div>' +
+      '</div>' +
+      '<div class="jcard-stage"><div class="mc-row" id="mc-row">' + bars + '</div></div>' +
+      '<div class="jcard-hint">' + esc(hintOf(JOURNEY)) + '</div>' +
+    '</div>';
+
+  bindCard();
+}
+
+// 磁力轮播：鼠标靠近哪张，哪张就变宽变高、浮起来、露出地名。
+// 只给真·鼠标开（触屏没有 hover，手指划过去反而会误触）。
+// 【核心：点开进故事必须要】【磁吸放大整套只是审美，删掉就是一排普通缩略图，功能不缺】
+function bindCard() {
+  const row = $("mc-row");
+  row.addEventListener("click", (e) => {
+    const bar = e.target.closest(".mc-bar");
+    if (bar) openStory(parseInt(bar.dataset.stop, 10) || 0);
+  });
+
+  if (!window.matchMedia || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  row.classList.add("is-magnetic");
+
+  // 尺寸这几个数是一组的，改一个就得回头看别的：
+  //   COL_H 188 → HOV_H 276 是真的长了一大截，卡片才有被顶起来的感觉；
+  //   .jcard-stage 的高度必须 ≥ HOV_H + .mc-row 上下内边距（276 + 4×2 = 284），
+  //   容器卡到正好 276 的话就是白放大 —— 高度涨不出去，只剩宽度在变。
+  const COL_W = 44, HOV_W = 96, COL_H = 188, HOV_H = 276, GAP = 8, INFLUENCE = 118;
+  // 静止 / 完全放大时的影子。放大不只是变大，得同时把影子做深做远，
+  // 眼睛才认得出“它离我更近了”。只变尺寸不变影子，看着像被拉长了而已。
+  const SHADOW_REST = "0 6px 16px -8px rgba(30,20,5,0.5), inset 0 0 0 1px rgba(255,255,255,0.06)";
+  const SHADOW_LIFT = "0 22px 40px -14px rgba(30,20,5,0.75), inset 0 0 0 1px rgba(255,255,255,0.14)";
+
+  row.addEventListener("pointermove", (e) => {
+    const rect = row.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const bars = row.querySelectorAll(".mc-bar");
+    const n = bars.length;
+    const startX = (rect.width - (n * COL_W + (n - 1) * GAP)) / 2;
+    bars.forEach((bar, i) => {
+      const center = startX + i * (COL_W + GAP) + COL_W / 2;
+      let f = Math.max(0, 1 - Math.abs(cx - center) / INFLUENCE);
+      f = f * f * (3 - 2 * f);                       // smoothstep，别让宽度线性地弹
+      bar.style.width  = (COL_W + (HOV_W - COL_W) * f) + "px";
+      bar.style.height = (COL_H + (HOV_H - COL_H) * f) + "px";
+      // 影子跟着 f 走：这里只在 f 过半时切换，不做逐帧插值 —— 一帧改六个 box-shadow
+      // 是实打实的重绘，划一下就掉帧，肉眼也分不出中间那几档。
+      bar.style.boxShadow = f > 0.5 ? SHADOW_LIFT : SHADOW_REST;
+      // 抬层：谁大谁在上。不抬的话，放大的那张会被后面的邻居压掉一条边，
+      // 影子也糊在邻居底下，浮起来的劲儿全没了。
+      bar.style.zIndex = f > 0.02 ? String(2 + Math.round(f * 10)) : "1";
+      bar.querySelector(".mc-bar-label").style.opacity = f > 0.4 ? (f - 0.4) / 0.6 : 0;
+    });
+  });
+  row.addEventListener("pointerleave", () => {
+    row.querySelectorAll(".mc-bar").forEach((bar) => {
+      bar.style.width = COL_W + "px";
+      bar.style.height = COL_H + "px";
+      bar.style.boxShadow = SHADOW_REST;
+      bar.style.zIndex = "1";
+      bar.querySelector(".mc-bar-label").style.opacity = 0;
+    });
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑥ 音乐 —— 页面内合成一段柔和的循环
+   【核心：duck 这件事必须要】【怎么拿到声音是你们自己的事，本项目不带音源】
+   本例是现合成的，只为了让单文件断网也有声音听。接真后端就是数据里给一个 audio_url。
+   为什么走 Web Audio 而不是 <audio>：
+   念白响起来时要把音乐压低（duck）。iOS Safari / WKWebView 上
+   HTMLAudioElement.volume 是只读的，赋值静默无效 —— 只有 GainNode 才真的管用。
+   接真后端时把「合成 buffer」换成「fetch 音频 → decodeAudioData」，
+   或换成 <audio> + createMediaElementSource + GainNode（细节见 SPEC.md）。
+   ══════════════════════════════════════════════════════════════════════ */
+const AUDIO = {
+  ctx: null, gain: null, buf: null, src: null,
+  startedAt: 0,   // 本次 start() 时的 ctx.currentTime
+  pausedAt: 0,    // 已经播过的秒数（暂停/拖动进度后重新记）
+  playing: false,
+  building: false,
+  ducked: false,  // 当前该不该压低（记成状态，因为念白可能比增益节点先开口）
+  timer: null,
+};
+
+// 【纯 demo 脚手架，接真后端时整个函数删掉】换成 fetch(audio_url) → decodeAudioData。
+// 合成一段无缝循环的 pad + 零星的钟声。
+// 无缝的关键：每个分音的频率都取整到「在 L 秒里正好走完整数个周期」，
+// 这样首尾相接的地方相位是连续的，不会有咔哒声。
+function buildLoopBuffer(ctx) {
+  const L = CONFIG.music.loopSeconds;
+  const sr = ctx.sampleRate;
+  const n = Math.floor(L * sr);
+  const data = new Float32Array(n);
+  const lock = (f) => Math.round(f * L) / L;          // 频率锁到 1/L 的整数倍
+  const TAU = Math.PI * 2;
+
+  // 底噪一样的和声垫（Am9 的堆叠），每个分音有自己的慢呼吸
+  const pad = [
+    { f: lock(110.00), a: 0.30, lfo: 1 },
+    { f: lock(164.81), a: 0.20, lfo: 2 },
+    { f: lock(220.00), a: 0.16, lfo: 1 },
+    { f: lock(329.63), a: 0.10, lfo: 3 },
+    { f: lock(493.88), a: 0.07, lfo: 2 },
+  ];
+  const BLOCK = 512;                                   // LFO 每 512 个采样算一次就够，省一半 sin
+  for (let p = 0; p < pad.length; p++) {
+    const { f, a, lfo } = pad[p];
+    const phase0 = p * 0.7;
+    for (let i = 0; i < n; i += BLOCK) {
+      const t0 = i / sr;
+      const env = a * (0.55 + 0.45 * Math.sin(TAU * lfo * t0 / L + phase0));
+      const end = Math.min(i + BLOCK, n);
+      for (let k = i; k < end; k++) data[k] += env * Math.sin(TAU * f * (k / sr));
+    }
+  }
+
+  // 稀疏的钟声：t0 起 5 秒衰减完，最后一颗必须在 L 之前收干净，否则接缝处会有尾巴
+  const bells = [
+    { t: 0,  f: 659.25, a: 0.16 },
+    { t: 6,  f: 440.00, a: 0.13 },
+    { t: 12, f: 523.25, a: 0.12 },
+    { t: 18, f: 493.88, a: 0.11 },
+    { t: 24, f: 329.63, a: 0.13 },
+  ];
+  bells.forEach((b) => {
+    const start = Math.floor(b.t * sr);
+    const len = Math.min(Math.floor(5 * sr), n - start);
+    for (let k = 0; k < len; k++) {
+      const t = k / sr;
+      data[start + k] += b.a * Math.exp(-1.1 * t) * Math.sin(TAU * b.f * t);
+    }
+  });
+
+  // 归一化到一个不吵的峰值
+  let peak = 0;
+  for (let i = 0; i < n; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
+  if (peak > 0) { const g = 0.34 / peak; for (let i = 0; i < n; i++) data[i] *= g; }
+
+  const buf = ctx.createBuffer(2, n, sr);
+  buf.copyToChannel(data, 0);
+  // 右声道整体后挪 12ms（环形拷贝，所以循环点仍然对得上）→ 一点点立体声宽度
+  const shift = Math.floor(sr * 0.012);
+  const right = new Float32Array(n);
+  for (let i = 0; i < n; i++) right[i] = data[(i + n - shift) % n];
+  buf.copyToChannel(right, 1);
+  return buf;
+}
+
+// AudioContext 必须在「用户手势的同步调用栈」里 new + resume，iOS 只认这个时机。
+// 所以是在「点开照片」那一下就把它建好，而不是等到点播放键。
+function ensureCtx() {
+  if (!AUDIO.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    AUDIO.ctx = new AC();
+    // 增益节点跟着上下文一起建（不等到开始播）：念白比歌先开口，
+    // 那会儿要是还没有 gain，第一句的 duck 就静悄悄地丢了。
+    AUDIO.gain = AUDIO.ctx.createGain();
+    AUDIO.gain.gain.value = AUDIO.ducked ? CONFIG.music.duckGain : 1;
+    AUDIO.gain.connect(AUDIO.ctx.destination);
+  }
+  if (AUDIO.ctx.state === "suspended") AUDIO.ctx.resume().catch(() => {});
+  return AUDIO.ctx;
+}
+
+function setPlayLoading(on) {
+  const btn = $("story-play");
+  btn.classList.toggle("is-loading", !!on);
+  if (on) btn.innerHTML = PLAY_SVG;
+}
+
+// 合成要几百毫秒（真实版这里是 fetch + decodeAudioData，动辄好几秒）。
+// 这期间用户完全可能已经把浮层关了 —— 回来时必须先看「现在还开着没有」：
+// 不看的话，页面已经关掉，歌却在后台继续放，而且再也点不到那个暂停键了。
+//
+// 两个容易写错的细节：
+// 1) 认的是「此刻的 session」，不是「发起合成时的那个 session」。关掉又立刻重开是很常见的
+//    操作，合成只排队一次（building 挡着），要是认发起时那个（已经 dead 了），新开的这次
+//    就永远等不到自动播 —— 浮层开着、歌不响、进度条不动。
+// 2) 不管人还在不在，合成结果都先存进 AUDIO.buf。这趟力气花都花了，扔掉的话下次得重来。
+function ensureBuffer() {
+  if (AUDIO.buf || AUDIO.building) return;
+  AUDIO.building = true;
+  setPlayLoading(true);
+  setTimeout(() => {
+    let buf = null;
+    try { buf = buildLoopBuffer(AUDIO.ctx); } catch (e) { console.warn("合成失败", e); }
+    AUDIO.building = false;
+    setPlayLoading(false);
+    if (!buf) return;
+    AUDIO.buf = buf;                          // 先收好，下次开秒播
+    const live = STORY.session;
+    if (!live || live.dead) return;           // ← 人已经走了，别播
+    $("story-dur").textContent = fmtTime(buf.duration);
+    playFrom(0);
+  }, 0);
+}
+
+function playFrom(offset) {
+  const ctx = AUDIO.ctx;
+  if (!ctx || !AUDIO.buf) return;
+  if (AUDIO.src) { try { AUDIO.src.onended = null; AUDIO.src.stop(); } catch (e) {} }
+  const src = ctx.createBufferSource();
+  src.buffer = AUDIO.buf;
+  src.loop = true;
+  src.connect(AUDIO.gain);
+  src.start(0, offset);
+  AUDIO.src = src;
+  AUDIO.startedAt = ctx.currentTime;
+  AUDIO.pausedAt = offset;
+  AUDIO.playing = true;
+
+  $("story-play").innerHTML = PAUSE_SVG;
+  $("story-eq").hidden = false;
+  startProgress();
+}
+
+function pauseMusic() {
+  if (!AUDIO.playing) return;
+  AUDIO.pausedAt += AUDIO.ctx.currentTime - AUDIO.startedAt;
+  if (AUDIO.src) { try { AUDIO.src.onended = null; AUDIO.src.stop(); } catch (e) {} AUDIO.src = null; }
+  AUDIO.playing = false;
+  stopProgress();
+  $("story-play").innerHTML = PLAY_SVG;
+  $("story-eq").hidden = true;
+}
+
+// 关浮层时的彻底停：声音、定时器、进度全部归零。
+// buffer 留着（同一首歌，下次开秒播）；真实版这里应该连 buffer 一起丢掉省内存。
+function stopMusic() {
+  stopProgress();
+  if (AUDIO.src) { try { AUDIO.src.onended = null; AUDIO.src.stop(); } catch (e) {} AUDIO.src = null; }
+  AUDIO.ducked = false;
+  if (AUDIO.gain) { try { AUDIO.gain.gain.cancelScheduledValues(0); AUDIO.gain.gain.value = 1; } catch (e) {} }
+  AUDIO.playing = false;
+  AUDIO.pausedAt = 0;
+  AUDIO.startedAt = 0;
+  $("story-play").innerHTML = PLAY_SVG;
+  $("story-eq").hidden = true;
+  $("story-fill").style.transform = "scaleX(0)";
+  $("story-cur").textContent = "0:00";
+}
+
+function elapsed() {
+  if (!AUDIO.buf) return 0;
+  const raw = AUDIO.playing ? AUDIO.pausedAt + (AUDIO.ctx.currentTime - AUDIO.startedAt) : AUDIO.pausedAt;
+  return raw % AUDIO.buf.duration;
+}
+function startProgress() {
+  stopProgress();
+  AUDIO.timer = setInterval(() => {
+    if (!AUDIO.playing || !AUDIO.buf || SEEK.dragging) return;
+    const pos = elapsed();
+    $("story-cur").textContent = fmtTime(pos);
+    $("story-fill").style.transform = "scaleX(" + (pos / AUDIO.buf.duration) + ")";
+  }, 250);
+}
+function stopProgress() {
+  if (AUDIO.timer) { clearInterval(AUDIO.timer); AUDIO.timer = null; }
+}
+
+// 只管「开」，不管「关」—— 打开浮层时用它。
+// 别在这儿图省事调 togglePlay：歌要是已经在放着，那一下就成了「暂停」。
+function startMusic() {
+  const session = STORY.session;
+  if (!session || AUDIO.playing) return;
+  ensureCtx();
+  if (!AUDIO.ctx) return;
+  if (!AUDIO.buf) { ensureBuffer(); return; }          // 第一次：先合成，好了自己会播
+  playFrom(AUDIO.pausedAt % AUDIO.buf.duration);
+}
+
+function togglePlay() {
+  if (AUDIO.playing) { pauseMusic(); return; }
+  startMusic();
+}
+
+// 【核心逻辑，抄的时候必须要】念白开口 → 音乐让路；念完 → 拉回来。音乐全程不停，只是变小。
+// 不做这一下，配了 TTS 之后念白和音乐会一起冲上来，两个声音谁也听不清。
+// 没配 TTS（纯打字机、没有人声）的话，可以把 duckGain 调到 1，等于关掉这个行为。
+function duck(on) {
+  AUDIO.ducked = !!on;               // 先记状态：歌可能还在合成，节点还没建起来
+  if (!AUDIO.gain || !AUDIO.ctx) return;
+  const target = on ? CONFIG.music.duckGain : 1;
+  try { AUDIO.gain.gain.setTargetAtTime(target, AUDIO.ctx.currentTime, 0.12); }
+  catch (e) { AUDIO.gain.gain.value = target; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑦ 故事浮层
+   【核心逻辑，抄的时候必须要，而且是最容易写漏的一块】
+   一次「打开」= 一个 session。所有在途的异步（定时器、音频合成、TTS 请求）
+   回来时都要先看一眼 session 死了没 —— 少了这道闸，关掉的浮层里歌会继续响，
+   而且 UI 已经没了，用户连暂停都点不到。
+   ══════════════════════════════════════════════════════════════════════ */
+const STORY = {
+  index: 0,
+  session: null,   // { dead, narrSeq, timer } —— 一次「打开」的生命周期
+};
+
+function newSession() {
+  return { dead: false, narrSeq: 0, timer: null };
+}
+// 念白是一条串起来的定时器链（打完这个字才排下一个），同一时刻只会有一个在等，
+// 所以记一个 id 就够 —— 切换/关闭时清掉它，整条链就断了。
+function clearTimers(session) {
+  if (!session) return;
+  if (session.timer) { clearTimeout(session.timer); session.timer = null; }
+}
+function later(session, fn, ms) {
+  session.timer = setTimeout(() => {
+    session.timer = null;
+    if (!session.dead) fn();
+  }, ms);
+}
+
+function openStory(index) {
+  // 这一整个函数跑在点击的同步栈里 —— AudioContext 必须在这儿建（iOS）
+  STORY.index = Math.max(0, Math.min(index || 0, JOURNEY.stops.length - 1));
+  STORY.session = newSession();
+
+  ensureCtx();      // 就在这一下手势里把音频上下文建好（iOS 只认这个时机）
+
+  $("story").hidden = false;
+  document.body.style.overflow = "hidden";
+
+  $("story-song").textContent = CONFIG.music.title;
+  $("story-artist").textContent = CONFIG.music.artist;
+  $("story-dur").textContent = fmtTime(AUDIO.buf ? AUDIO.buf.duration : CONFIG.music.loopSeconds);
+
+  renderDots();
+  renderStop();     // 念白从这里开始（顺带把音乐 duck 下去）
+  startMusic();     // 点开照片就是用户手势，允许自动播
+}
+
+function closeStory() {
+  const session = STORY.session;
+  // dead 标志：在途的异步回调（合成完的音频、还在打字的定时器）回来时一看就知道该原地退出。
+  // 少了这个，关掉的页面里歌会一直响 —— 而且 UI 没了，用户连暂停都点不到。
+  if (session) { session.dead = true; clearTimers(session); }
+  STORY.session = null;
+
+  stopMusic();
+  $("story").hidden = true;
+  document.body.style.overflow = "";
+}
+
+function renderDots() {
+  $("story-dots").innerHTML = JOURNEY.stops
+    .map((_, i) => '<span class="' + (i === STORY.index ? "on" : "") + '" data-dot="' + i + '"></span>')
+    .join("");
+}
+
+// 渲染当前这一处：换图 + caption + 重开念白。音乐不动 —— 整趟就一首歌。
+function renderStop() {
+  const session = STORY.session;
+  if (!session) return;
+  const stop = JOURNEY.stops[STORY.index];
+
+  clearTimers(session);
+  session.narrSeq++;             // 作废上一处还没念完的那串定时器
+
+  const bg = $("story-bg");
+  bg.style.backgroundImage = 'url("' + photoOf(stop) + '")';
+  bg.style.animation = "none"; void bg.offsetWidth; bg.style.animation = "";   // 重启 Ken Burns
+
+  $("story-en").textContent = stop.placeEn || "";
+  $("story-place").innerHTML = esc(stop.place || stop.placeEn || "");
+  $("story-date").textContent = stop.date || "";
+
+  $("story-settled").hidden = true;
+  $("story-note").textContent = "";
+  $("story-narr").style.display = "";
+  $("story-narr-line").classList.remove("out");
+
+  document.querySelectorAll("#story-dots span").forEach((d, i) => d.classList.toggle("on", i === STORY.index));
+
+  typewriter(fill(stop.note));
+}
+
+// 逐字念白：一句一句打出来，打完淡出换下一句，全部念完落到左下角。
+// 每一层回调都拿 seq 跟当前对表 —— 切换/关闭时 seq 一变，旧的那串自己就哑了。
+// 【核心逻辑，抄的时候必须要】
+// 【打字速度那两个数（165ms/字、气口 700ms）只是我的手感，随便调】
+// 配了 TTS 的话，节奏改成跟着音频走：拿到时长按字数摊开，或直接听 TTS 的逐字时间戳。
+// 不配 TTS 也完全成立 —— 就是没有人声的纯打字机动画，功能不缺。
+function typewriter(note) {
+  const session = STORY.session;
+  if (!session) return;
+  const line = $("story-narr-line");
+  const sentences = splitSentences(note);
+  if (!sentences.length) { $("story-narr").style.display = "none"; onNarrDone(note); return; }
+
+  const seq = session.narrSeq;
+  duck(true);
+
+  let si = 0;
+  function playSentence() {
+    if (session.dead || seq !== session.narrSeq) return;
+    const sent = sentences[si];
+    const isLast = si >= sentences.length - 1;
+    line.classList.remove("out");
+
+    const durMs = Math.max(1500, sent.length * 165);
+    const interval = Math.max(45, (durMs * 0.92) / sent.length);
+    let i = 0;
+    (function step() {
+      if (session.dead || seq !== session.narrSeq) return;
+      i++;
+      line.innerHTML = esc(sent.slice(0, i)) + '<span class="jstory-narr-cursor">|</span>';
+      if (i < sent.length) { later(session, step, interval); return; }
+      // 一句念完：留个气口，再淡出换下一句
+      later(session, () => {
+        if (seq !== session.narrSeq) return;
+        line.classList.add("out");
+        later(session, () => {
+          if (seq !== session.narrSeq) return;
+          if (isLast) onNarrDone(note);
+          else { si++; playSentence(); }
+        }, 460);
+      }, 700);
+    })();
+  }
+  playSentence();
+}
+
+// 念完：正中那行淡出，整段落到左下角（默认就是展开的），地名后面挂上重播提示。
+// 【核心：念完要有个落点】念白飘完就没了的话，用户想回头读一遍就没得读。
+// 【落到左下角、默认展开、4 行收起，这些都是我的选择，随便换】
+function onNarrDone(note) {
+  duck(false);
+  $("story-narr-line").classList.add("out");
+
+  const stop = JOURNEY.stops[STORY.index];
+  $("story-place").innerHTML = esc(stop.place || stop.placeEn || "") +
+    '<span class="cap-replay-hint">↻</span>';
+
+  if (!note) return;
+  const noteEl = $("story-note");
+  const moreBtn = $("story-more");
+  noteEl.textContent = note;
+  noteEl.classList.add("expanded");          // 默认全文展开，超过 42vh 在里面滚
+  noteEl.scrollTop = 0;
+  moreBtn.textContent = "收起 ↑";
+  $("story-settled").hidden = false;
+  // 收起来只有 4 行，短文本收不收都一样 —— 量一下真实高度，够不到 4 行就不给按钮。
+  // （别按字数估：字号、屏宽、中英混排都会让「一行几个字」差出一倍。）
+  const lh = parseFloat(getComputedStyle(noteEl).lineHeight) || 21;
+  moreBtn.hidden = noteEl.scrollHeight <= lh * 4 + 2;
+}
+
+function replayNarration() {
+  const stop = JOURNEY.stops[STORY.index];
+  $("story-settled").hidden = true;
+  $("story-narr").style.display = "";
+  $("story-narr-line").classList.remove("out");
+  if (STORY.session) STORY.session.narrSeq++;
+  clearTimers(STORY.session);
+  typewriter(fill(stop.note));
+}
+
+function navStop(delta) {
+  if (!STORY.session) return;
+  const n = JOURNEY.stops.length;
+  STORY.index = (STORY.index + delta + n) % n;
+  renderStop();     // 音乐不打断
+}
+
+/* ── 进度条拖动
+   【只是审美，随便删】不给拖的话，把这一节和 .jstory-player-track 一起去掉即可。 ── */
+const SEEK = { dragging: false };
+
+function seekRatioFromEvent(e) {
+  const rect = $("story-track").getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+}
+function previewSeek(ratio) {
+  $("story-fill").style.transform = "scaleX(" + ratio + ")";
+  if (AUDIO.buf) $("story-cur").textContent = fmtTime(ratio * AUDIO.buf.duration);
+}
+
+/* ── 事件绑定（浮层是静态节点，只绑一次）
+   【核心：关闭 / 播放暂停 / 左右切换 / 卸载清理，这四件必须有】
+   【左右滑、键盘快捷键、点地名重播，都是锦上添花，随便删】 ── */
+function bindStory() {
+  const ov = $("story");
+
+  ov.addEventListener("click", (e) => {
+    if (e.target.closest("#story-close")) { closeStory(); return; }
+    if (e.target.closest("#story-play"))  { togglePlay(); return; }
+    if (e.target.closest("#story-place")) { replayNarration(); return; }
+
+    const more = e.target.closest("#story-more");
+    if (more) {
+      const expanded = $("story-note").classList.toggle("expanded");
+      more.textContent = expanded ? "收起 ↑" : "展开全文 ↓";
+      return;
+    }
+    const dot = e.target.closest("[data-dot]");
+    if (dot) { navStop(parseInt(dot.dataset.dot, 10) - STORY.index); return; }
+  });
+
+  // 左右滑切换。不用 setPointerCapture —— 会把里面按钮的点击一起劫走。
+  let downX = null, downY = null;
+  const photo = $("story-photo");
+  photo.addEventListener("pointerdown", (e) => { downX = e.clientX; downY = e.clientY; });
+  photo.addEventListener("pointerup", (e) => {
+    if (downX == null) return;
+    const dx = e.clientX - downX, dy = e.clientY - downY;
+    downX = downY = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) navStop(dx < 0 ? 1 : -1);
+  });
+  photo.addEventListener("pointercancel", () => { downX = downY = null; });
+
+  // 进度条：按下即预览，松手才真的跳
+  const track = $("story-track");
+  track.addEventListener("pointerdown", (e) => {
+    if (!AUDIO.buf) return;
+    SEEK.dragging = true;
+    track.classList.add("dragging");
+    try { track.setPointerCapture(e.pointerId); } catch (err) {}
+    previewSeek(seekRatioFromEvent(e));
+    e.preventDefault();
+  });
+  track.addEventListener("pointermove", (e) => { if (SEEK.dragging) previewSeek(seekRatioFromEvent(e)); });
+  const endSeek = (e) => {
+    if (!SEEK.dragging) return;
+    SEEK.dragging = false;
+    track.classList.remove("dragging");
+    const offset = seekRatioFromEvent(e) * AUDIO.buf.duration;
+    if (AUDIO.playing) playFrom(offset);
+    else { AUDIO.pausedAt = offset; previewSeek(offset / AUDIO.buf.duration); }
+  };
+  track.addEventListener("pointerup", endSeek);
+  track.addEventListener("pointercancel", () => {
+    SEEK.dragging = false;
+    track.classList.remove("dragging");
+  });
+
+  // 键盘：Esc 关，左右切
+  document.addEventListener("keydown", (e) => {
+    if ($("story").hidden) return;
+    if (e.key === "Escape") { closeStory(); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { navStop(1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft")  { navStop(-1); e.preventDefault(); }
+  });
+
+  // 卸载清理：切到后台标签页/关页面时，别把声音留在那儿
+  window.addEventListener("pagehide", () => {
+    if (STORY.session) STORY.session.dead = true;
+    stopMusic();
+    if (AUDIO.ctx && AUDIO.ctx.state === "running") AUDIO.ctx.suspend().catch(() => {});
+  });
+}
+
+/* ── 起飞 ── */
+renderChat();
+bindStory();
+$("story-play").innerHTML = PLAY_SVG;
+</script>
+</body>
+</html>
+
+
+==================================================================
+FILE 6/6 — examples/worker.js
+==================================================================
+
+/**
+ * journey-cards · 参考后端（Cloudflare Workers + D1 + KV）
+ * ===========================================================================
+ *
+ * 这只是一份**参考实现**，不是唯一实现。SPEC.md 定义的是接口，不是技术栈——
+ * 用 Node / Go / Python / PHP 随便写，只要路径、请求体、响应字段对得上，
+ * 前端（卡片 + 全屏故事页）一行都不用改。
+ *
+ * 选 Workers 只是因为它最省事：一个文件、零依赖、`wrangler deploy` 就上线，
+ * 数据库（D1）和图片音频存储（KV）都在同一个账号里，免费额度够个人用。
+ *
+ * 特意做成单文件、不 import 任何第三方包。想抄哪段抄哪段。
+ *
+ * ---------------------------------------------------------------------------
+ * 一、建表 SQL（存成 schema.sql，或直接贴进 D1 控制台）
+ * ---------------------------------------------------------------------------
+ *
+ * -- 一趟旅行
+ * CREATE TABLE IF NOT EXISTS journeys (
+ *   id          TEXT    PRIMARY KEY,           -- 'j_<base36时间戳>_<随机5位>'
+ *   title       TEXT    NOT NULL,              -- 主标题（地名，如"新西兰"）
+ *   title_en    TEXT    NOT NULL DEFAULT '',   -- 副标题 / 英文名
+ *   year        TEXT    NOT NULL DEFAULT '',   -- 纯文本年份，不是数字类型
+ *   cover       TEXT    NOT NULL DEFAULT '',   -- 封面：完整 URL 或 'kv:<key>'
+ *   hint        TEXT    NOT NULL DEFAULT '',   -- 卡片底下那行小字，每趟一句，可选
+ *   song_url    TEXT,                          -- 音频直链：完整 URL 或 'kv:<key>'
+ *   song_title  TEXT,                          -- 歌名
+ *   song_artist TEXT,                          -- 艺人
+ *   song_cover  TEXT,                          -- 可选：专辑封面
+ *   song_dur    INTEGER,                       -- 秒；只用于音频加载完成前占位显示
+ *   song_hue    INTEGER,                       -- 0-360，播放器主色调
+ *   position    INTEGER NOT NULL DEFAULT 0,    -- 排序值，越小越靠前（见下面"排序"）
+ *   created_at  INTEGER NOT NULL,              -- 毫秒时间戳
+ *   updated_at  INTEGER NOT NULL
+ * );
+ * CREATE INDEX IF NOT EXISTS idx_journeys_order ON journeys (position, created_at DESC);
+ *
+ * -- 一趟里的一处停留
+ * CREATE TABLE IF NOT EXISTS journey_stops (
+ *   id          TEXT    PRIMARY KEY,           -- 's_<base36时间戳>_<随机5位>'
+ *   journey_id  TEXT    NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+ *   place       TEXT    NOT NULL,              -- 地名（必填）
+ *   place_en    TEXT    NOT NULL DEFAULT '',
+ *   date        TEXT    NOT NULL DEFAULT '',   -- 纯文本，如 '2025.03.16'，不校验格式
+ *   src         TEXT    NOT NULL DEFAULT '',   -- 竖屏照片：完整 URL 或 'kv:<key>'
+ *   note        TEXT    NOT NULL DEFAULT '',   -- 第一人称那段话（故事页左下角正文）
+ *   position    INTEGER NOT NULL DEFAULT 0,    -- 0,1,2… 递增
+ *   created_at  INTEGER NOT NULL,
+ *   updated_at  INTEGER NOT NULL
+ * );
+ * CREATE INDEX IF NOT EXISTS idx_jstops_journey ON journey_stops (journey_id, position, created_at);
+ *
+ * 注意 ON DELETE CASCADE：D1 默认不开 PRAGMA foreign_keys，级联删除**不会**自动生效。
+ * 本文件里的 deleteJourney 是显式两步删（放在同一个 batch 事务里），别指望数据库帮你删。
+ *
+ * 排序（两张表方向相反，照抄别改）：
+ *   journeys     新建时 position = MIN(position) - 1  → 一路走负数，最新的一趟排最前
+ *   journey_stops 新建时 position = MAX(position) + 1 → 0,1,2… 递增，按走的顺序排
+ *   两张表都是 ORDER BY position ASC。
+ *
+ * ---------------------------------------------------------------------------
+ * 二、wrangler.toml
+ * ---------------------------------------------------------------------------
+ *
+ *   name = "journey-cards"
+ *   main = "worker.js"
+ *   compatibility_date = "2026-05-08"
+ *
+ *   [[d1_databases]]
+ *   binding = "DB"                    # ← 名字必须是 DB
+ *   database_name = "journey-cards"
+ *   database_id = "<wrangler d1 create 之后填这里>"
+ *
+ *   [[kv_namespaces]]
+ *   binding = "FILES"                 # ← 名字必须是 FILES；建议单开一个 namespace，
+ *   id = "<wrangler kv namespace create 之后填这里>"   #   别跟别的项目共用
+ *
+ *   [vars]
+ *   # ALLOW_ORIGIN = "https://your-frontend.example"  # 默认 "*"；上线建议钉死自己的域名
+ *   # TIMEZONE     = "Asia/Shanghai"                  # year 缺省值按哪个时区算，默认 UTC
+ *   # PUBLIC_BASE  = "https://journeys.example.com"   # 填了就返回绝对 URL，跨域前端用得上
+ *   # REQUIRE_MEDIA_TOKEN = "1"                       # 照片/音频也要 ?token=，默认公开
+ *
+ * 部署：
+ *   wrangler d1 create journey-cards
+ *   wrangler kv namespace create FILES
+ *   wrangler d1 execute journey-cards --remote --file=./schema.sql
+ *   wrangler secret put AUTH_TOKEN        # ← 随便一串长随机字符串，别写进 vars
+ *   wrangler deploy
+ *
+ * ---------------------------------------------------------------------------
+ * 三、接口一览
+ * ---------------------------------------------------------------------------
+ *
+ *   GET    /api/journeys                      列表（内嵌 stops）；?limit=&offset=&stops=0
+ *   GET    /api/journeys/:id                  取单趟
+ *   POST   /api/journeys                      建一趟
+ *   PATCH  /api/journeys/:id                  改一趟（部分字段）
+ *   DELETE /api/journeys/:id                  删一趟（连同 stops 和自己上传的 KV 媒体）
+ *   PATCH  /api/journeys/reorder              重排整个列表  body { order: [id, …] }
+ *
+ *   GET    /api/journeys/:id/stops            列出某趟的停留
+ *   POST   /api/journeys/:id/stops            加一处（自动追加到末尾）
+ *   PATCH  /api/journeys/:id/stops/reorder    重排某趟的停留 body { order: [stopId, …] }
+ *   GET    /api/journeys/stops/:stopId        取一处
+ *   PATCH  /api/journeys/stops/:stopId        改一处
+ *   DELETE /api/journeys/stops/:stopId        删一处
+ *
+ *   POST   /api/journeys/upload               传照片 → KV，返回 { key, url }
+ *   POST   /api/journeys/audio                传音频 → KV，返回 { key, url }
+ *   GET    /api/journeys/photo/:key           读照片（默认公开、长缓存、支持 Range）
+ *   GET    /api/journeys/audio/:key           读音频（同上；Range 是进度条能拖的前提）
+ *
+ * 除两个媒体读取接口外，全部要 Bearer token。错误统一是
+ *   { "error": "人话", "code": "MACHINE_CODE" }
+ * 前端认 code，别去 match 文案。
+ *
+ * ---------------------------------------------------------------------------
+ * 四、音乐：没有任何音乐平台的代理
+ * ---------------------------------------------------------------------------
+ *
+ * 曲库授权这事没法开源。这里只认一个中立的音频直链字段 song.url：
+ *   - 自己传：POST /api/journeys/audio 拿到 'kv:<key>'，写进 song_url。同源，稳。
+ *   - 用外链：直接把 https://… 写进 song_url。
+ *
+ * ⚠️ 用外链有个坑：前端为了在念白时把音乐压低（ducking），走的是
+ * Web Audio 的 createMediaElementSource。它接一个**跨域且没有 CORS 头**的音频时，
+ * 浏览器不会报错，会**安静地静音**。所以要么用自托管端点，要么确认你的外链带
+ * Access-Control-Allow-Origin。
+ *
+ * 另外 <audio> 要能拖进度条，服务端必须支持 Range 返回 206——本文件的 serveMedia
+ * 实现了，照抄的时候别把这段删掉。
+ */
+
+// ───────────────────────── 可调参数 ─────────────────────────
+
+// base64 字符串长度上限（不是解码后的字节数）。base64 比原文大 1/3，
+// 4,000,000 ≈ 3MB 图片，12,000,000 ≈ 9MB 音频。
+const MAX_PHOTO_B64 = 4_000_000;
+const MAX_AUDIO_B64 = 12_000_000;
+
+// 允许的 MIME，别让上传接口退化成通用网盘
+const PHOTO_MIME = /^image\/(jpeg|png|webp|avif|gif)$/;
+const AUDIO_MIME = /^audio\/(mpeg|mp3|mp4|aac|ogg|opus|wav|webm|x-m4a)$/;
+
+// 播放器缺省值：音频 metadata 加载完之前拿这两个占位
+const DEFAULT_DUR = 210;   // 秒
+const DEFAULT_HUE = 32;    // 暖橙
+
+// id / key 形状。`upload`、`photo` 这些静态段不能被当成 id 吃掉
+const ID_RE = /^[\w-]+$/;
+const RESERVED_SEG = new Set(["upload", "audio", "photo", "stops", "reorder"]);
+
+// ───────────────────────── 响应封装 ─────────────────────────
+
+function corsHeaders(env) {
+  return {
+    "access-control-allow-origin": env.ALLOW_ORIGIN || "*",
+    "access-control-allow-methods": "GET,HEAD,POST,PATCH,DELETE,OPTIONS",
+    "access-control-allow-headers": "authorization,content-type",
+    "access-control-expose-headers": "content-range,accept-ranges,content-length",
+    "access-control-max-age": "86400",
+  };
+}
+
+function j(env, data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      // 别让 WebView / CDN 缓存 API 响应，不然刚改完的内容拿不到
+      "cache-control": "no-store",
+      ...corsHeaders(env),
+    },
+  });
+}
+
+// 错误统一带机器可读的 code，文案随便改、code 不要动
+function fail(env, status, code, msg) {
+  return j(env, { error: msg, code }, status);
+}
+
+// ───────────────────────── 鉴权 ─────────────────────────
+
+/**
+ * 单一共享 token，够个人用：没有用户体系、不过期、改 token 就等于全体注销。
+ *
+ * 生产环境想加强，按需要挑：
+ *   1. 把 ?token= 关掉（下面那段），只认 Authorization header。query 里的 token
+ *      会进 CF 日志、进 Referer、进浏览器历史。这里留着是因为 <img> / <audio>
+ *      不带 header——但本实现的媒体接口默认是公开的，其实用不上，可以直接删。
+ *   2. 换成 HttpOnly cookie + 服务端 session。
+ *   3. 真要多用户就上 JWT / OAuth，并给两张表加 owner_id 列。
+ */
+function authed(request, env) {
+  const secret = env.AUTH_TOKEN || "";
+  if (!secret) return false;   // 没配 token 就一律拒绝，别裸奔
+  const auth = request.headers.get("Authorization") || "";
+  let t = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!t) t = new URL(request.url).searchParams.get("token") || "";
+  return safeEqual(t, secret);
+}
+
+// 定长比较，别用 ===（会因为提前 return 泄露前缀信息）
+function safeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// ───────────────────────── 小工具 ─────────────────────────
+
+const newId = (prefix) =>
+  prefix + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+
+const str = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
+
+// 请求体里 camelCase / snake_case 都吃，AI 和人手写都不容易踩空
+const pick = (b, ...keys) => {
+  for (const k of keys) if (b[k] !== undefined) return b[k];
+  return undefined;
+};
+const has = (b, ...keys) => keys.some((k) => b[k] !== undefined);
+
+function intOrNull(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// year 缺省值。Worker 跑在 UTC，跨年那几个小时会给出上一年——配 TIMEZONE 就对了
+function currentYear(env) {
+  const tz = env.TIMEZONE || "UTC";
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric" }).format(new Date());
+  } catch {
+    return String(new Date().getUTCFullYear());
+  }
+}
+
+// 'kv:<key>' → 可访问 URL；其它（完整 URL / 相对路径）原样透传；空 → null
+function mediaUrl(env, ref) {
+  const v = str(ref);
+  if (!v) return null;
+  if (!v.startsWith("kv:")) return v;
+  const key = v.slice(3);
+  const base = env.PUBLIC_BASE ? String(env.PUBLIC_BASE).replace(/\/+$/, "") : "";
+  return base + (key.startsWith("ja_") ? "/api/journeys/audio/" : "/api/journeys/photo/") + key;
+}
+
+const kvKeyOf = (ref) => {
+  const v = str(ref);
+  return v.startsWith("kv:") ? v.slice(3) : null;
+};
+
+// 删 journey / stop 时顺手回收 KV 里的媒体，但只在没人再引用它的时候删。
+// （不做这件事的话，每删一趟就漏一批对象，永久堆在 KV 里。）
+async function releaseAsset(env, ref) {
+  const key = kvKeyOf(ref);
+  if (!key) return;
+  const used = await env.DB.prepare(
+    `SELECT 1 AS x FROM journeys      WHERE cover = ? OR song_url = ?
+     UNION ALL
+     SELECT 1 AS x FROM journey_stops WHERE src = ?
+     LIMIT 1`
+  ).bind(ref, ref, ref).first();
+  if (!used) await env.FILES.delete(key).catch(() => {});
+}
+
+// ───────────────────────── 行 → 响应对象 ─────────────────────────
+
+function songOf(env, row) {
+  // 判空看 url 或 title：只填了歌名没音频也算数（纯展示，播放器显示但不出声）
+  if (!row.song_url && !row.song_title) return null;
+  return {
+    url: mediaUrl(env, row.song_url),
+    title: row.song_title || "",
+    artist: row.song_artist || "",
+    cover: mediaUrl(env, row.song_cover),
+    dur: row.song_dur || DEFAULT_DUR,
+    hue: row.song_hue == null ? DEFAULT_HUE : row.song_hue,
+  };
+}
+
+function stopOf(env, row) {
+  return {
+    id: row.id,
+    journeyId: row.journey_id,
+    place: row.place,
+    placeEn: row.place_en || "",
+    date: row.date || "",
+    src: mediaUrl(env, row.src),     // 空 → null
+    note: row.note || "",
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function journeyOf(env, row, stops) {
+  const audio = songOf(env, row);
+  return {
+    id: row.id,
+    title: row.title,
+    titleEn: row.title_en || "",
+    year: row.year || "",
+    cover: mediaUrl(env, row.cover),  // 空 → null（跟 stop.src 保持一致）
+    // 卡片底下那行小字：原样存原样返回，不校验也不生成。
+    // 空串就交给前端回落到它自己的兜底文案（前端写 `journey.hint || CONFIG.cardHint`）。
+    hint: row.hint || "",
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    audio,        // ← SPEC.md 里的正式字段名
+    song: audio,  // ← 老前端用的别名，指向同一个对象。新代码只认 audio
+    stops: stops || [],
+  };
+}
+
+const J_COLS =
+  "id, title, title_en, year, cover, hint, song_url, song_title, song_artist, song_cover, " +
+  "song_dur, song_hue, position, created_at, updated_at";
+const S_COLS =
+  "id, journey_id, place, place_en, date, src, note, position, created_at, updated_at";
+
+// ───────────────────────── journeys ─────────────────────────
+
+async function listJourneys(request, env, url) {
+  const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "0", 10) || 0, 0), 200);
+  const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10) || 0, 0);
+  const withStops = url.searchParams.get("stops") !== "0";
+
+  let sql = `SELECT ${J_COLS} FROM journeys ORDER BY position ASC, created_at DESC`;
+  const binds = [];
+  if (limit) { sql += " LIMIT ? OFFSET ?"; binds.push(limit, offset); }
+
+  const jRes = await env.DB.prepare(sql).bind(...binds).all();
+  const rows = jRes.results || [];
+  if (!rows.length) return j(env, { journeys: [], total: 0 });
+
+  let byJourney = {};
+  if (withStops) {
+    // 一次把这一页所有 stops 捞出来，在内存里分组。别在循环里查数据库。
+    const ph = rows.map(() => "?").join(",");
+    const sRes = await env.DB.prepare(
+      `SELECT ${S_COLS} FROM journey_stops WHERE journey_id IN (${ph})
+       ORDER BY position ASC, created_at ASC`
+    ).bind(...rows.map((r) => r.id)).all();
+    for (const s of sRes.results || []) (byJourney[s.journey_id] ||= []).push(stopOf(env, s));
+  }
+
+  const total = await env.DB.prepare("SELECT COUNT(*) AS n FROM journeys").first();
+  return j(env, {
+    journeys: rows.map((r) => journeyOf(env, r, byJourney[r.id])),
+    total: total?.n ?? rows.length,
+  });
+}
+
+async function getJourney(env, id) {
+  const row = await env.DB.prepare(`SELECT ${J_COLS} FROM journeys WHERE id = ?`).bind(id).first();
+  if (!row) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+  const sRes = await env.DB.prepare(
+    `SELECT ${S_COLS} FROM journey_stops WHERE journey_id = ? ORDER BY position ASC, created_at ASC`
+  ).bind(id).all();
+  return j(env, { journey: journeyOf(env, row, (sRes.results || []).map((s) => stopOf(env, s))) });
+}
+
+async function createJourney(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const title = str(b.title);
+  if (!title) return fail(env, 400, "TITLE_REQUIRED", "title 不能空");
+
+  const id = newId("j_");
+  const t = Date.now();
+  // 新的一趟排最前：position 一路往负数走
+  const minR = await env.DB.prepare("SELECT MIN(position) AS p FROM journeys").first();
+  const position = (minR?.p ?? 0) - 1;
+
+  await env.DB.prepare(
+    `INSERT INTO journeys
+     (id, title, title_en, year, cover, song_url, song_title, song_artist, song_cover,
+      song_dur, song_hue, position, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(
+    id, title,
+    str(pick(b, "titleEn", "title_en")),
+    str(pick(b, "year")) || currentYear(env),
+    str(pick(b, "cover")),
+    str(pick(b, "audioUrl", "audio_url", "songUrl", "song_url")) || null,
+    str(pick(b, "audioTitle", "audio_title", "songTitle", "song_title")) || null,
+    str(pick(b, "audioArtist", "audio_artist", "songArtist", "song_artist")) || null,
+    str(pick(b, "audioCover", "audio_cover", "songCover", "song_cover")) || null,
+    intOrNull(pick(b, "audioDur", "audio_dur", "songDur", "song_dur")),
+    intOrNull(pick(b, "audioHue", "audio_hue", "songHue", "song_hue")),
+    position, t, t
+  ).run();
+
+  return j(env, { id, ok: true });
+}
+
+async function updateJourney(request, env, id) {
+  const b = await request.json().catch(() => ({}));
+  const set = [], vals = [];
+  const put = (col, v) => { set.push(`${col} = ?`); vals.push(v); };
+
+  if (b.title !== undefined) {
+    const v = str(b.title);
+    if (!v) return fail(env, 400, "TITLE_REQUIRED", "title 不能空");
+    put("title", v);
+  }
+  if (has(b, "titleEn", "title_en")) put("title_en", str(pick(b, "titleEn", "title_en")));
+  if (has(b, "year")) put("year", str(b.year));
+  if (has(b, "cover")) put("cover", str(b.cover));
+  if (has(b, "songUrl", "song_url", "audioUrl", "audio_url"))
+    put("song_url", str(pick(b, "songUrl", "song_url", "audioUrl", "audio_url")) || null);
+  if (has(b, "songTitle", "song_title")) put("song_title", str(pick(b, "songTitle", "song_title")) || null);
+  if (has(b, "songArtist", "song_artist")) put("song_artist", str(pick(b, "songArtist", "song_artist")) || null);
+  if (has(b, "songCover", "song_cover")) put("song_cover", str(pick(b, "songCover", "song_cover")) || null);
+  if (has(b, "songDur", "song_dur")) put("song_dur", intOrNull(pick(b, "songDur", "song_dur")));
+  if (has(b, "songHue", "song_hue")) put("song_hue", intOrNull(pick(b, "songHue", "song_hue")));
+  if (has(b, "position")) put("position", intOrNull(b.position) ?? 0);
+
+  if (!set.length) return fail(env, 400, "NO_FIELDS", "没有可更新的字段");
+  put("updated_at", Date.now());
+  vals.push(id);
+
+  const r = await env.DB.prepare(`UPDATE journeys SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
+  if (!r.meta.changes) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+  return j(env, { ok: true });
+}
+
+async function deleteJourney(env, id) {
+  const row = await env.DB.prepare("SELECT cover, song_url FROM journeys WHERE id = ?").bind(id).first();
+  if (!row) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+
+  // 先把要回收的媒体引用记下来，删完行再去清 KV（清之前还会查一次有没有别人在用）
+  const sRes = await env.DB.prepare("SELECT src FROM journey_stops WHERE journey_id = ?").bind(id).all();
+  const refs = [row.cover, row.song_url, ...(sRes.results || []).map((s) => s.src)];
+
+  // batch 是一个事务：两条要么都成功要么都不动，不会出现"stops 删了 journey 还在"
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM journey_stops WHERE journey_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM journeys WHERE id = ?").bind(id),
+  ]);
+  for (const ref of refs) await releaseAsset(env, ref);
+
+  return j(env, { ok: true });
+}
+
+// 重排整个列表：body { order: ["j_a", "j_b", …] }，按给的顺序写 0,1,2…
+// 之后新建的一趟仍然是 MIN(position)-1 = -1，照样排最前，不冲突。
+async function reorderJourneys(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const order = Array.isArray(b.order) ? b.order : null;
+  if (!order || !order.length) return fail(env, 400, "BAD_BODY", "order 必须是 id 数组");
+  if (order.some((x) => typeof x !== "string" || !ID_RE.test(x)))
+    return fail(env, 400, "BAD_ID", "order 里有非法 id");
+
+  const t = Date.now();
+  await env.DB.batch(order.map((id, i) =>
+    env.DB.prepare("UPDATE journeys SET position = ?, updated_at = ? WHERE id = ?").bind(i, t, id)
+  ));
+  return j(env, { ok: true, count: order.length });
+}
+
+// ───────────────────────── stops ─────────────────────────
+
+async function listStops(env, journeyId) {
+  const jj = await env.DB.prepare("SELECT id FROM journeys WHERE id = ?").bind(journeyId).first();
+  if (!jj) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+  const sRes = await env.DB.prepare(
+    `SELECT ${S_COLS} FROM journey_stops WHERE journey_id = ? ORDER BY position ASC, created_at ASC`
+  ).bind(journeyId).all();
+  return j(env, { stops: (sRes.results || []).map((s) => stopOf(env, s)) });
+}
+
+async function getStop(env, id) {
+  const row = await env.DB.prepare(`SELECT ${S_COLS} FROM journey_stops WHERE id = ?`).bind(id).first();
+  if (!row) return fail(env, 404, "NOT_FOUND", "stop 不存在");
+  return j(env, { stop: stopOf(env, row) });
+}
+
+async function createStop(request, env, journeyId) {
+  const jj = await env.DB.prepare("SELECT id, cover FROM journeys WHERE id = ?").bind(journeyId).first();
+  if (!jj) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+
+  const b = await request.json().catch(() => ({}));
+  const place = str(b.place);
+  if (!place) return fail(env, 400, "PLACE_REQUIRED", "place 不能空");
+  const src = str(b.src);
+
+  const maxR = await env.DB.prepare(
+    "SELECT MAX(position) AS p FROM journey_stops WHERE journey_id = ?"
+  ).bind(journeyId).first();
+  const position = (maxR?.p ?? -1) + 1;   // 停留是往后追加：0,1,2…
+
+  const id = newId("s_");
+  const t = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO journey_stops
+     (id, journey_id, place, place_en, date, src, note, position, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
+  ).bind(
+    id, journeyId, place,
+    str(pick(b, "placeEn", "place_en")),
+    str(pick(b, "date")),
+    src,
+    str(pick(b, "note")),
+    position, t, t
+  ).run();
+
+  // 第一张照片自动当封面（cover 空的时候才填），不然卡片永远没图
+  if (src && !jj.cover) {
+    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
+      .bind(src, t, journeyId).run();
+  } else {
+    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, journeyId).run();
+  }
+
+  return j(env, { id, ok: true });
+}
+
+async function updateStop(request, env, id) {
+  const cur = await env.DB.prepare("SELECT journey_id, src FROM journey_stops WHERE id = ?").bind(id).first();
+  if (!cur) return fail(env, 404, "NOT_FOUND", "stop 不存在");
+
+  const b = await request.json().catch(() => ({}));
+  const set = [], vals = [];
+  const put = (col, v) => { set.push(`${col} = ?`); vals.push(v); };
+
+  if (b.place !== undefined) {
+    const v = str(b.place);
+    if (!v) return fail(env, 400, "PLACE_REQUIRED", "place 不能空");
+    put("place", v);
+  }
+  if (has(b, "placeEn", "place_en")) put("place_en", str(pick(b, "placeEn", "place_en")));
+  if (has(b, "date")) put("date", str(b.date));
+  if (has(b, "src")) put("src", str(b.src));
+  if (has(b, "note")) put("note", str(b.note));
+  if (has(b, "position")) put("position", intOrNull(b.position) ?? 0);
+
+  if (!set.length) return fail(env, 400, "NO_FIELDS", "没有可更新的字段");
+  const t = Date.now();
+  put("updated_at", t);
+  vals.push(id);
+
+  await env.DB.prepare(`UPDATE journey_stops SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
+
+  // 跟 createStop 保持对称：换了照片也要管封面，改了停留也要刷父级 updated_at
+  const newSrc = has(b, "src") ? str(b.src) : cur.src;
+  const parent = await env.DB.prepare("SELECT cover FROM journeys WHERE id = ?").bind(cur.journey_id).first();
+  if (parent && (!parent.cover || parent.cover === cur.src) && newSrc !== cur.src) {
+    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
+      .bind(newSrc, t, cur.journey_id).run();
+    if (cur.src && cur.src !== newSrc) await releaseAsset(env, cur.src);
+  } else {
+    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, cur.journey_id).run();
+    if (has(b, "src") && cur.src && cur.src !== newSrc) await releaseAsset(env, cur.src);
+  }
+
+  return j(env, { ok: true });
+}
+
+async function deleteStop(env, id) {
+  const cur = await env.DB.prepare("SELECT journey_id, src FROM journey_stops WHERE id = ?").bind(id).first();
+  if (!cur) return fail(env, 404, "NOT_FOUND", "stop 不存在");
+
+  await env.DB.prepare("DELETE FROM journey_stops WHERE id = ?").bind(id).run();
+
+  const t = Date.now();
+  const parent = await env.DB.prepare("SELECT cover FROM journeys WHERE id = ?").bind(cur.journey_id).first();
+  if (parent && cur.src && parent.cover === cur.src) {
+    // 封面正好是被删掉那张 → 顺位补上第一张还在的照片
+    const nextSrc = await env.DB.prepare(
+      "SELECT src FROM journey_stops WHERE journey_id = ? AND src != '' ORDER BY position ASC LIMIT 1"
+    ).bind(cur.journey_id).first();
+    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
+      .bind(nextSrc?.src || "", t, cur.journey_id).run();
+  } else {
+    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, cur.journey_id).run();
+  }
+  await releaseAsset(env, cur.src);
+
+  // position 不重排，删中间一处会留下空洞（0,1,3,4）——不影响排序，介意就调 reorder
+  return j(env, { ok: true });
+}
+
+async function reorderStops(request, env, journeyId) {
+  const b = await request.json().catch(() => ({}));
+  const order = Array.isArray(b.order) ? b.order : null;
+  if (!order || !order.length) return fail(env, 400, "BAD_BODY", "order 必须是 stop id 数组");
+  if (order.some((x) => typeof x !== "string" || !ID_RE.test(x)))
+    return fail(env, 400, "BAD_ID", "order 里有非法 id");
+
+  const t = Date.now();
+  const stmts = order.map((sid, i) =>
+    env.DB.prepare("UPDATE journey_stops SET position = ?, updated_at = ? WHERE id = ? AND journey_id = ?")
+      .bind(i, t, sid, journeyId)
+  );
+  stmts.push(env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, journeyId));
+  await env.DB.batch(stmts);
+  return j(env, { ok: true, count: order.length });
+}
+
+// ───────────────────────── 媒体上传 / 读取 ─────────────────────────
+
+/**
+ * 两种传法都收：
+ *   A. JSON  { src_data: "<base64>", mime: "image/jpeg" }   ← AI / 脚本方便
+ *   B. 裸二进制 body + content-type: image/jpeg             ← 浏览器上传方便，省 CPU
+ *
+ * base64 那条路要在 Worker 里 atob + 逐字节转数组，是 CPU 密集操作；
+ * 免费计划每请求 10ms CPU，大图会超。真要上量就走 B，或者换 R2 预签名直传。
+ */
+async function uploadMedia(request, env, kind) {
+  const isPhoto = kind === "photo";
+  const prefix = isPhoto ? "jp_" : "ja_";
+  const maxB64 = isPhoto ? MAX_PHOTO_B64 : MAX_AUDIO_B64;
+  const mimeRe = isPhoto ? PHOTO_MIME : AUDIO_MIME;
+  const ct = (request.headers.get("content-type") || "").toLowerCase();
+
+  let bytes, mime;
+
+  if (ct.includes("application/json")) {
+    const b = await request.json().catch(() => ({}));
+    let data = pick(b, "src_data", "srcData", "audio_data", "audioData", "data");
+    if (typeof data !== "string" || !data) {
+      return fail(env, 400, "BAD_BODY", isPhoto ? "src_data 必须是 base64 字符串" : "audio_data 必须是 base64 字符串");
+    }
+    mime = str(b.mime) || (isPhoto ? "image/jpeg" : "audio/mpeg");
+    // data URL 前缀自己剥掉，别让调用方（尤其是 AI）记这条规矩
+    const m = /^data:([^;,]+);base64,/i.exec(data);
+    if (m) { mime = m[1].toLowerCase(); data = data.slice(m[0].length); }
+    data = data.replace(/\s/g, "");
+    if (data.length > maxB64) {
+      return fail(env, 413, "TOO_LARGE", `文件太大（base64 上限 ${maxB64} 字符），先压一压`);
+    }
+    try {
+      bytes = b64ToBytes(data);
+    } catch {
+      // 原版这里没 try/catch，非法 base64 直接 500。这种事应该是 400。
+      return fail(env, 400, "BAD_BASE64", "base64 解不开");
+    }
+  } else {
+    mime = ct.split(";")[0].trim() || (isPhoto ? "image/jpeg" : "audio/mpeg");
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength) return fail(env, 400, "BAD_BODY", "body 是空的");
+    if (buf.byteLength > Math.floor(maxB64 * 0.75)) {
+      return fail(env, 413, "TOO_LARGE", "文件太大，先压一压");
+    }
+    bytes = new Uint8Array(buf);
+  }
+
+  if (!mimeRe.test(mime)) return fail(env, 400, "BAD_MIME", `不支持的类型：${mime}`);
+
+  const key = prefix + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  // 没设 expirationTtl = 永久保存。回收靠 releaseAsset（删 journey / 换图时）
+  await env.FILES.put(key, bytes, { metadata: { mime, size: bytes.length, uploadedAt: Date.now() } });
+
+  return j(env, {
+    key,
+    // 建议存成 'kv:<key>'，换域名 / 改路径前缀时不用动数据
+    ref: "kv:" + key,
+    url: mediaUrl(env, "kv:" + key),
+    ok: true,
+  });
+}
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
+ * 读媒体。默认不鉴权：<img> / <audio> 不会带 Authorization header，
+ * 安全模型是"URL 猜不到"（unlisted），**不是访问控制**——拿到链接的人就能看。
+ * 介意就设 REQUIRE_MEDIA_TOKEN=1，前端所有 <img src> 后面补 ?token=。
+ *
+ * 一定要校验 key 前缀。只校验 /^[\w-]+$/ 的话，这个公开端点能读到同一个 KV
+ * namespace 里的**任意**对象——包括你放在里面的别的东西。
+ */
+async function serveMedia(request, env, key, prefix) {
+  if (!key.startsWith(prefix) || !ID_RE.test(key)) {
+    return new Response(JSON.stringify({ error: "bad key", code: "BAD_KEY" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
+    });
+  }
+  if (env.REQUIRE_MEDIA_TOKEN === "1" && !authed(request, env)) {
+    return new Response(JSON.stringify({ error: "unauthorized", code: "UNAUTHORIZED" }), {
+      status: 401,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
+    });
+  }
+
+  const obj = await env.FILES.getWithMetadata(key, { type: "arrayBuffer" });
+  if (!obj || !obj.value) {
+    return new Response(JSON.stringify({ error: "not found", code: "NOT_FOUND" }), {
+      status: 404,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
+    });
+  }
+
+  const mime = obj.metadata?.mime || (prefix === "jp_" ? "image/jpeg" : "audio/mpeg");
+  const total = obj.value.byteLength;
+  const base = {
+    "content-type": mime,
+    // key 是一次性的（改图必换 key），所以可以放心 immutable
+    "cache-control": "public, max-age=31536000, immutable",
+    "accept-ranges": "bytes",
+    ...corsHeaders(env),
+  };
+
+  if (request.method === "HEAD") {
+    return new Response(null, { headers: { ...base, "content-length": String(total) } });
+  }
+
+  // Range：<audio> 拖进度条靠这个。只会 200 全量返回的端点，进度条是拖不动的。
+  const range = request.headers.get("Range");
+  const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  if (m && (m[1] || m[2])) {
+    let start, end;
+    if (m[1]) {
+      start = Number(m[1]);
+      end = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1;
+    } else {
+      // "bytes=-500" = 最后 500 字节
+      const suffix = Math.min(Number(m[2]), total);
+      start = total - suffix;
+      end = total - 1;
+    }
+    if (!(start >= 0) || start >= total || end < start) {
+      return new Response(null, {
+        status: 416,
+        headers: { ...base, "content-range": `bytes */${total}` },
+      });
+    }
+    return new Response(obj.value.slice(start, end + 1), {
+      status: 206,
+      headers: {
+        ...base,
+        "content-range": `bytes ${start}-${end}/${total}`,
+        "content-length": String(end - start + 1),
+      },
+    });
+  }
+
+  return new Response(obj.value, { headers: { ...base, "content-length": String(total) } });
+}
+
+// ───────────────────────── 路由 ─────────────────────────
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const p = url.pathname;
+    const m = request.method;
+
+    if (m === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(env) });
+
+    // ① 媒体读取放在鉴权闸门**之前**（img / audio 标签不带 header）
+    let hit;
+    if ((hit = p.match(/^\/api\/journeys\/photo\/([\w-]+)$/)) && (m === "GET" || m === "HEAD"))
+      return serveMedia(request, env, hit[1], "jp_");
+    if ((hit = p.match(/^\/api\/journeys\/audio\/([\w-]+)$/)) && (m === "GET" || m === "HEAD"))
+      return serveMedia(request, env, hit[1], "ja_");
+
+    if (p !== "/api/journeys" && !p.startsWith("/api/journeys/"))
+      return fail(env, 404, "NOT_FOUND", "没有这个接口");
+
+    // ② 闸门。往下全部要 token
+    if (!authed(request, env)) return fail(env, 401, "UNAUTHORIZED", "token 不对");
+
+    try {
+      // 静态路径必须排在 /:id 之前，否则会被当成 journey id 吃掉
+      if (p === "/api/journeys" && m === "GET") return await listJourneys(request, env, url);
+      if (p === "/api/journeys" && m === "POST") return await createJourney(request, env);
+      if (p === "/api/journeys/reorder" && m === "PATCH") return await reorderJourneys(request, env);
+      if (p === "/api/journeys/upload" && m === "POST") return await uploadMedia(request, env, "photo");
+      if (p === "/api/journeys/audio" && m === "POST") return await uploadMedia(request, env, "audio");
+
+      // stops（路径里不带 journey id，跟 SPEC 一致）
+      if ((hit = p.match(/^\/api\/journeys\/stops\/([\w-]+)$/))) {
+        const sid = hit[1];
+        if (!ID_RE.test(sid)) return fail(env, 400, "BAD_ID", "id 形状不对");
+        if (m === "GET") return await getStop(env, sid);
+        if (m === "PATCH") return await updateStop(request, env, sid);
+        if (m === "DELETE") return await deleteStop(env, sid);
+        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
+      }
+
+      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)\/stops$/))) {
+        const jid = hit[1];
+        if (!ID_RE.test(jid) || RESERVED_SEG.has(jid)) return fail(env, 400, "BAD_ID", "id 形状不对");
+        if (m === "GET") return await listStops(env, jid);
+        if (m === "POST") return await createStop(request, env, jid);
+        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
+      }
+
+      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)\/stops\/reorder$/)) && m === "PATCH") {
+        if (!ID_RE.test(hit[1]) || RESERVED_SEG.has(hit[1])) return fail(env, 400, "BAD_ID", "id 形状不对");
+        return await reorderStops(request, env, hit[1]);
+      }
+
+      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)$/))) {
+        const jid = hit[1];
+        if (!ID_RE.test(jid) || RESERVED_SEG.has(jid)) return fail(env, 400, "BAD_ID", "id 形状不对");
+        if (m === "GET") return await getJourney(env, jid);
+        if (m === "PATCH") return await updateJourney(request, env, jid);
+        if (m === "DELETE") return await deleteJourney(env, jid);
+        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
+      }
+
+      return fail(env, 404, "NOT_FOUND", "没有这个接口");
+    } catch (e) {
+      // D1 / KV 抛出来的都在这里兜住，别把栈吐给客户端
+      console.error("[journeys]", e && e.stack || e);
+      return fail(env, 500, "INTERNAL", "服务端出错了");
+    }
+  },
+};
