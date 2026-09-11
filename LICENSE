@@ -1,16 +1,24 @@
-MIT License
-
-Copyright (c) 2026 nonchaiovo
+Copyright (c) 2026 nonchaiovo. All rights reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this software and associated documentation files (the "Software"), to use
+and modify the Software for personal, non-commercial purposes only, subject
+to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. ATTRIBUTION — The above copyright notice, the name "nonchaiovo", and this
+   permission notice shall be included in all copies or substantial portions
+   of the Software.
+
+2. NON-COMMERCIAL — The Software shall not be used, in whole or in part, for
+   any commercial purpose. Commercial use includes, but is not limited to,
+   selling the Software, incorporating it into a product or service offered
+   for sale, or using it to generate revenue.
+
+3. NO REDISTRIBUTION AS OPEN SOURCE — You may not redistribute the Software,
+   or any derivative work based on it, under an open-source license or any
+   other license that would grant recipients broader rights than those stated
+   here. Private forks for personal use are permitted; public redistribution
+   is not.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
