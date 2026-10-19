@@ -1,17 +1,38 @@
-# Journey Cards — 全量单文件（喂给 AI 用 / one-file bundle）
+# Journey Cards — 完整接入包（2026-10-19）
 
-这一个纯文本文件里装了整个项目：说明(README) + 接入指南(INTEGRATE) + 技术规格(SPEC)
-+ 给 AI 的写作指南(AI-GUIDE) + 参考 UI 源码 + 参考后端源码。
+===== LICENSE =====
+Copyright (c) 2026 nonchaiovo. All rights reserved.
 
-把这整个文件丢给任意 AI 助手，说"照这个在我的 app 里实现这个功能"即可。
-来源 / 最新版: https://github.com/nonchaiovo/journey-cards
-许可: MIT。二改 / 搬运 / 写文章介绍请标明出处。
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use
+and modify the Software for personal, non-commercial purposes only, subject
+to the following conditions:
+
+1. ATTRIBUTION — The above copyright notice, the name "nonchaiovo", and this
+   permission notice shall be included in all copies or substantial portions
+   of the Software.
+
+2. NON-COMMERCIAL — The Software shall not be used, in whole or in part, for
+   any commercial purpose. Commercial use includes, but is not limited to,
+   selling the Software, incorporating it into a product or service offered
+   for sale, or using it to generate revenue.
+
+3. NO REDISTRIBUTION AS OPEN SOURCE — You may not redistribute the Software,
+   or any derivative work based on it, under an open-source license or any
+   other license that would grant recipients broader rights than those stated
+   here. Private forks for personal use are permitted; public redistribution
+   is not.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 
-==================================================================
-FILE 1/6 — README.md
-==================================================================
-
+===== README.md =====
 # Journey Cards
 
 **把"AI 带你去一个地方"这件事，接进你自己的前端。**
@@ -23,6 +44,24 @@ FILE 1/6 — README.md
 跟"在聊天里发几张图"的区别是：这是一趟**有顺序、有旁白、有配乐的行程**，AI 是带路的那个人，不是图片搬运工。
 
 为人机恋而做，但设计与后端无关：两张表、一组很小的 REST 接口、一个纯前端的渲染器，就够了。
+
+## 2026-10-19 完整功能与 UI 更新
+
+现在除原来的聊天卡片示例，还包含 **[journeys/index.html](journeys/index.html)**：最新照片画布、完整旅程管理、停留编辑与折叠、照片上传、全屏故事、流式配乐、旁白展开/收起和点地名重播。
+
+```sh
+python3 -m http.server 8080
+# 打开 http://localhost:8080/journeys/
+```
+
+默认演示模式使用本机 localStorage，附带虚构文字与本地 SVG 风景占位图，新增/编辑/删除可直接体验。没有私人旅行照片、聊天记录或服务凭据。完整接入和发布步骤见 **[FULL-UI.md](FULL-UI.md)**。
+
+- `journeys/app.jsx`：可修改的 React 源码；`app.compiled.js`：已编译产物。
+- `journeys/config.js`：演示/真实 API 配置；`runtime.js`：数据适配与演示存储。
+- `examples/worker.js` + `schema.sql` + `wrangler.toml`：沿用原仓库的 D1/KV 后端与完整部署配置。
+- `npm ci && npm run build && npm test`：重建与回归检查。
+
+保留原有许可和聊天卡片示例；完整页面按已有公开契约使用整趟音频直链，不绑定私人曲库或语音账号。TTS 是可选适配接口，未配置时仅播放逐字动画。
 
 ## 里面有什么
 
@@ -154,25 +193,57 @@ const CONFIG = {
 
 大致规模：两张表、一个 KV（或任意对象存储）放照片和音频、一个共享 token 做鉴权。参考实现跑在 Cloudflare Workers + D1 + KV 上，但没有任何一处依赖它们的特性，换 Postgres + S3 + 任意框架都是直译。
 
-## 用它、改它、搬它
+## 许可
 
-[MIT](LICENSE)，随便用：接进自己的项目、改成想要的样子、商用都行，不用问我。
+**非商用 · 署名 · 禁止再开源分发**（见 [LICENSE](LICENSE)）
 
-**只有一条：二次修改、搬运、或者写文章介绍的时候，请标明出处**（带上这个仓库的链接就行）。
-
-MIT 本身就要求保留 `LICENSE` 里的版权声明——直接抄文件进项目的话，把 `LICENSE` 一起带上就已经合规了。这里再单独写一句，是因为很多人不会点开 LICENSE 看。
-
-- **抄代码进自己项目** → 保留 `LICENSE`，或在源码注释里留一行出处
-- **改完再发布出去** → 说明改自哪里，附原仓库链接
-- **写教程 / 做视频 / 发帖介绍** → 文中标一下
-- **只是自己用** → 什么都不用做，玩得开心
+可以看、可以学、可以改着自己用——但不许拿去商用，不许以开源许可证再发布出去，用了请标明出处和作者 nonchaiovo。
 
 这东西是一个人和她的 AI 一起磨出来的。里面每一句"为什么要这样写"的注释，都是真撞过一次才写下来的——照片为什么会糊、文字底下为什么莫名多出一块灰板、退出之后音乐为什么关不掉。希望它能走远一点，也希望走到哪儿都还知道它是从哪儿来的。
 
 
-==================================================================
-FILE 2/6 — INTEGRATE.md
-==================================================================
+===== FULL-UI.md =====
+# 完整旅行页面 · 2026-10-19
+
+## 本次同步
+
+从 NEST 最新旅行 UI 提取照片画布和故事组件：平移、双指缩放、惯性、视口瓦片裁剪；默认旁白落定并展开，正文最多 42vh 可滚动，点地名重播；照片 Ken Burns 动画；流式 HTMLAudioElement + Web Audio GainNode 压低背景配乐；进度条点击定位；退出故事、切换停留或宿主关闭面板时清理音频。
+
+独立入口另接上旅程管理：创建、编辑标题/年份/整趟配乐、删除旅程，添加/编辑/删除停留、上传或粘贴照片链接、单张及全部折叠。没有灰色 tap 高亮，不添加勾选装饰。
+
+## 本地体验与构建
+
+运行 `python3 -m http.server 8080`，打开 `/journeys/`。默认 `config.js` 的 `demo:true` 将修改留在浏览器 localStorage；清除该站点 `journey-cards-demo-v2` 项可重置。照片是 SVG 占位图；演示不预置音乐或合成语音。浏览器储存容量有限，大量照片应使用真实后端。
+
+React 18.3.1 / ReactDOM 18.3.1 production 已内嵌在 HTML，保留上游许可证头；无需 CDN React 或浏览器 Babel。字体仍可联网获取 Google Fonts，断网会回退系统字体。修改 JSX 后执行 `npm ci && npm run build`，不要只改编译产物。
+
+## 连接真实后端
+
+1. Cloudflare 创建 D1 数据库和 KV，填入 `wrangler.toml` 对应 ID。
+2. 新库执行 `npx wrangler d1 execute journey-cards --remote --file=schema.sql`。旧库已遵守原 SPEC 时无需迁移。
+3. `npx wrangler secret put AUTH_TOKEN` 设置服务端 token。
+4. 把 `journeys/config.js` 的 `demo` 改为 false。API 同源时 `apiBase` 留空；异源时配置真实地址和服务端 ALLOW_ORIGIN。token 应由宿主在运行时注入，不能把真实值提交到公开仓库。
+5. `npx wrangler deploy` 同时发布静态页面与 `/api/*` 后端。
+
+音频沿用公开契约 `audio.url` / `song.url`（GET 返回兼容别名），编辑时提交 `audioUrl` 和 `audioTitle`。使用自有可播放音频链接，跨域音频服务器须允许 CORS，否则 Web Audio 可能静音。音频时长加载后使用真实 duration，之前使用数据值。也可使用原接口 `POST /api/journeys/audio` 上传后写入返回的媒体引用。公开版本不绑定网易云搜索/代理；没有音频 URL 时隐藏播放器。照片/音频默认沿用原后端公开媒体模型，详见 SPEC 的鉴权说明。
+
+可选 TTS：配置同 API 基址下的 `ttsEndpoint` 路径，例如 `/api/tts`；宿主实现 `POST {text}`，返回 `{voice:{audio_data_url,duration}}`。示例 Worker 不含语音供应商，未配置时逐字动画仍可用。原 NEST 的私人角色与 Fish 配置不随包发布。
+
+## 宿主嵌入
+
+推荐 iframe 隔离全局 CSS。页面默认照片画布，`#manage` 为管理页。同源宿主可向 iframe 发送 `{type:"journeys:refresh"}` 刷新和 `{type:"journeys:stop-audio"}` 停止/退出故事；页面返回时发送 `{type:"journeys:close"}`。跨域宿主须在源码中明确配置允许的 origin 后再接消息。
+
+聊天卡片入口继续使用 `examples/journey-cards.html` 和 INTEGRATE.md；AI 写入顺序见 AI-GUIDE.md。只有 `<journey>` 标签或成功的写入交付才应产生旅行卡片；GET 回看旅行不应把普通回复变成旅行旁白。
+
+## 验证范围
+
+`npm test` 覆盖演示 CRUD、音频字段兼容、存储恢复及后端错误传播。浏览器检查画布、管理入口、停留折叠和故事退出。实体 iPhone 的音频解锁、第三方音频 CORS 和自备 TTS 需在接入环境复测；这次不部署私人 NEST 服务。
+
+本目录与整个仓库遵守 LICENSE（非商用、署名、禁止再开源分发）；第三方 React 继续遵守其自身 MIT 许可。
+
+
+===== INTEGRATE.md =====
+> 2026-10-19：完整旅行页面、构建与部署说明见 [FULL-UI.md](FULL-UI.md)，源码入口为 `journeys/app.jsx`。下文保留原聊天卡片数据契约。
 
 # 接进你自己的前端
 
@@ -673,9 +744,8 @@ cardHint: "……",
 - [ ] 类名全带前缀，没有把 `* { box-sizing }` 和 `body {}` 抄进宿主
 
 
-==================================================================
-FILE 3/6 — SPEC.md
-==================================================================
+===== SPEC.md =====
+> 2026-10-19：完整旅行页面、构建与部署说明见 [FULL-UI.md](FULL-UI.md)，源码入口为 `journeys/app.jsx`。下文保留原聊天卡片数据契约。
 
 # Journey Cards · 设计规格
 
@@ -1890,9 +1960,8 @@ ALTER TABLE journeys ADD COLUMN hint TEXT NOT NULL DEFAULT '';
 老数据全是空串，前端会自动回落到默认文案，不用回填。
 
 
-==================================================================
-FILE 4/6 — AI-GUIDE.md
-==================================================================
+===== AI-GUIDE.md =====
+> 2026-10-19：完整旅行页面、构建与部署说明见 [FULL-UI.md](FULL-UI.md)，源码入口为 `journeys/app.jsx`。下文保留原聊天卡片数据契约。
 
 # 给 AI 的写作指南
 
@@ -2448,10 +2517,2083 @@ curl -s -XPOST "$BASE/api/journeys/upload" \
 - [ ] `<journey>` 标签里的 id 跟第一步返回的对得上
 
 
-==================================================================
-FILE 5/6 — examples/journey-cards.html
-==================================================================
+===== schema.sql =====
+CREATE TABLE IF NOT EXISTS journeys (
+  id          TEXT    PRIMARY KEY,           -- 'j_<base36时间戳>_<随机5位>'
+  title       TEXT    NOT NULL,              -- 主标题（地名，如"新西兰"）
+  title_en    TEXT    NOT NULL DEFAULT '',   -- 副标题 / 英文名
+  year        TEXT    NOT NULL DEFAULT '',   -- 纯文本年份，不是数字类型
+  cover       TEXT    NOT NULL DEFAULT '',   -- 封面：完整 URL 或 'kv:<key>'
+  hint        TEXT    NOT NULL DEFAULT '',   -- 卡片底下那行小字，每趟一句，可选
+  song_url    TEXT,                          -- 音频直链：完整 URL 或 'kv:<key>'
+  song_title  TEXT,                          -- 歌名
+  song_artist TEXT,                          -- 艺人
+  song_cover  TEXT,                          -- 可选：专辑封面
+  song_dur    INTEGER,                       -- 秒；只用于音频加载完成前占位显示
+  song_hue    INTEGER,                       -- 0-360，播放器主色调
+  position    INTEGER NOT NULL DEFAULT 0,    -- 排序值，越小越靠前（见下面"排序"）
+  created_at  INTEGER NOT NULL,              -- 毫秒时间戳
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journeys_order ON journeys (position, created_at DESC);
 
+-- 一趟里的一处停留
+CREATE TABLE IF NOT EXISTS journey_stops (
+  id          TEXT    PRIMARY KEY,           -- 's_<base36时间戳>_<随机5位>'
+  journey_id  TEXT    NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+  place       TEXT    NOT NULL,              -- 地名（必填）
+  place_en    TEXT    NOT NULL DEFAULT '',
+  date        TEXT    NOT NULL DEFAULT '',   -- 纯文本，如 '2025.03.16'，不校验格式
+  src         TEXT    NOT NULL DEFAULT '',   -- 竖屏照片：完整 URL 或 'kv:<key>'
+  note        TEXT    NOT NULL DEFAULT '',   -- 第一人称那段话（故事页左下角正文）
+  position    INTEGER NOT NULL DEFAULT 0,    -- 0,1,2… 递增
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jstops_journey ON journey_stops (journey_id, position, created_at);
+
+
+
+===== wrangler.toml =====
+name = "journey-cards"
+main = "examples/worker.js"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./journeys"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "journey-cards"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "REPLACE_WITH_YOUR_KV_ID"
+
+
+===== journeys/config.js =====
+// 只放公开配置；不要将真实 token 提交到仓库。
+window.JOURNEYS_CONFIG = {
+  demo: true, // false 时连接下方 API
+  apiBase: "", // 同源留空；跨域填 https://your-worker.example
+  token: "", // 真实应用请在运行时注入，勿公开发布
+  ttsEndpoint: "", // 可选，POST {text} -> {voice:{audio_data_url,duration}}
+};
+
+
+===== journeys/runtime.js =====
+(function () {
+  const config = window.JOURNEYS_CONFIG;
+  const KEY = "journey-cards-demo-v2";
+  function art(i) {
+    const colors = ["#8da9a6", "#c9ac88", "#a1abc0", "#b1b493", "#c6a19b", "#92a5b8"];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="${colors[i]}"/><circle cx="430" cy="200" r="72" fill="#f6e7ce"/><path d="M0 650L200 320L400 650L600 450V900H0" fill="#415b59"/><path d="M0 770Q250 620 600 790V900H0" fill="#d7d0b6"/><text x="40" y="850" fill="#fff" font-size="24">JOURNEYS / ${i+1}</text></svg>`;
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }
+  function seed() {
+    return [{id:"demo_journey",title:"山海之间",titleEn:"Between Mountains and Sea",year:"2026",cover:art(0),stops:["清晨的山谷","海边小镇","雨后森林","山间湖泊","夕阳渡口","夜色归途"].map((place,i)=>({id:"demo_stop_"+i,place,placeEn:"A moment together",date:"2026.10."+(10+i),src:art(i),note:"这是一段虚构的演示旅程。我们在这里停了一会儿，听风吹过，慢慢看天色变化。你说不急着去下一站，于是我把地图收好，陪你继续走。".repeat(i===0 ? 5 : 1)}))}];
+  }
+  let data;
+  try { data = JSON.parse(localStorage.getItem(KEY)); } catch (_) {}
+  if (!Array.isArray(data)) data=seed();
+  const persist = () => localStorage.setItem(KEY, JSON.stringify(data));
+  window.journeyMediaURL = function(ref) {
+    if (!ref || /^(https?:|data:|blob:)/i.test(ref)) return ref || "";
+    return config.apiBase ? new URL(ref, config.apiBase).href : ref;
+  };
+  function normalize(j) {
+    const audio = j.audio || j.song || null;
+    return {...j, cover:window.journeyMediaURL(j.cover),song:audio && {...audio,url:window.journeyMediaURL(audio.url)},stops:(j.stops||[]).map(s=>({...s,src:window.journeyMediaURL(s.src)}))};
+  }
+  async function demo(path,opts) {
+    const method=opts.method || "GET", b=opts.body || {};
+    if(path==="/api/journeys/upload") return {ok:true,url:`data:${b.mime || "image/jpeg"};base64,${b.src_data}`};
+    if(path==="/api/journeys" && method==="GET") return {journeys:data.map(normalize)};
+    const id=()=>"demo_"+crypto.randomUUID();
+    const fields=b=>({...b,...(b.audioUrl!==undefined ? {song:b.audioUrl ? {url:b.audioUrl,title:b.audioTitle||"配乐",dur:210,hue:32} : null} : {})});
+    let result={ok:true};
+    if(path==="/api/journeys" && method==="POST") {const j={...fields(b),id:id(),stops:[]};data.unshift(j);result.id=j.id;}
+    else {
+      let m=path.match(/^\/api\/journeys\/([^/]+)\/stops$/);
+      if(m && method==="POST") { const j=data.find(j=>j.id===m[1]); if(!j) throw Error("旅程不存在"); const s={...b,id:id()};j.stops.push(s);if(!j.cover)j.cover=s.src;result.id=s.id; }
+      else if((m=path.match(/^\/api\/journeys\/stops\/([^/]+)$/))) {
+        const j=data.find(j=>j.stops.some(s=>s.id===m[1]));if(!j)throw Error("停留不存在");
+        if(method==="DELETE") j.stops=j.stops.filter(s=>s.id!==m[1]);else if(method==="PATCH")Object.assign(j.stops.find(s=>s.id===m[1]),b);else throw Error("不支持的方法");
+      } else if((m=path.match(/^\/api\/journeys\/([^/]+)$/))) {
+        const j=data.find(j=>j.id===m[1]);if(!j)throw Error("旅程不存在");
+        if(method==="DELETE")data=data.filter(j=>j.id!==m[1]);else if(method==="PATCH")Object.assign(j,fields(b));else throw Error("不支持的方法");
+      } else throw Error("演示不提供此接口");
+    }
+    persist(); return result;
+  }
+  window.journeysAPI = async function(path,opts={}) {
+    try {
+      if(config.demo) return await demo(path,opts);
+      const response=await fetch((config.apiBase||"").replace(/\/$/,"")+path,{...opts,headers:{"Content-Type":"application/json",Authorization:"Bearer "+(config.token||""),...(opts.headers||{})},body:opts.body===undefined ? undefined : JSON.stringify(opts.body)});
+      const d=await response.json();if(!response.ok)throw Error(typeof d.error==="string" ? d.error : d.message || "请求失败 ("+response.status+")");
+      if(d.journeys)d.journeys=d.journeys.map(normalize);return d;
+    } catch(e) { window.dispatchEvent(new CustomEvent("journeys:error",{detail:e.message}));throw e; }
+  };
+  window.addEventListener("journeys:error",e=>alert(e.detail));
+})();
+
+
+===== journeys/app.jsx =====
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+const TOKEN = window.JOURNEYS_CONFIG.token || "";
+const API = window.journeysAPI;
+/* ── toast ── */
+let toastTimer;
+function Toast({ msg }) { return msg ? <div className="toast">{msg}</div> : null; }
+function useToast() {
+  const [msg, setMsg] = useState("");
+  const show = (m) => { setMsg(m); clearTimeout(toastTimer); toastTimer = setTimeout(() => setMsg(""), 2000); };
+  return [msg, show];
+}
+
+const fmtDur = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+
+/* ── 照片压缩 ── */
+function compressImage(file, maxW = 1600) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      c.toBlob(blob => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ base64: reader.result.split(",")[1], mime: "image/jpeg", w, h });
+        reader.readAsDataURL(blob);
+      }, "image/jpeg", 0.85);
+    };
+    img.src = url;
+  });
+}
+
+/* ── 照片选择器 ── */
+function PhotoPicker({ src, onSrcChange }) {
+  const fileRef = useRef(null);
+  const [urlMode, setUrlMode] = useState(false);
+  const [urlVal, setUrlVal] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true);
+    try {
+      const { base64, mime } = await compressImage(f);
+      const res = await API("/api/journeys/upload", { method: "POST", body: { src_data: base64, mime } });
+      if (res.url) onSrcChange(res.url);
+    } catch (err) { alert("上传失败：" + err.message); }
+    setUploading(false);
+  };
+
+  const handleUrl = () => {
+    const v = urlVal.trim();
+    if (v) { onSrcChange(v); setUrlMode(false); setUrlVal(""); }
+  };
+
+  if (src) {
+    return (
+      <div className="photo-picker has-photo">
+        <img className="photo-picker-img" src={src} />
+        <button className="photo-picker-change" onClick={() => { onSrcChange(""); if (fileRef.current) fileRef.current.value = ""; }}>换一张</button>
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleFile} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="photo-picker">
+      <div className="photo-picker-empty">
+        <div style={{fontSize:32,opacity:0.3}}>🏔</div>
+        <button className="photo-picker-btn primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          {uploading ? "上传中…" : "从相册选一张照片"}
+        </button>
+        <span className="photo-picker-or">或</span>
+        {urlMode ? (
+          <div style={{width:"100%",display:"flex",gap:8}}>
+            <input className="photo-picker-url" value={urlVal} onChange={e => setUrlVal(e.target.value)}
+              placeholder="粘贴图片链接" autoFocus onKeyDown={e => e.key === "Enter" && handleUrl()} />
+            <button className="photo-picker-btn primary" onClick={handleUrl} style={{flex:"none"}}>确定</button>
+          </div>
+        ) : (
+          <button className="photo-picker-btn secondary" onClick={() => setUrlMode(true)}>粘贴图片链接</button>
+        )}
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleFile} />
+      </div>
+      <div className="photo-picker-tip">
+        💡 推荐用竖屏照片（手机壁纸比例）· <a href="https://unsplash.com/s/photos/travel?orientation=portrait" target="_blank" rel="noopener">去 Unsplash 找图</a>
+      </div>
+    </div>
+  );
+}
+
+/* ── 新建旅程 ── */
+function NewJourneyEditor({ journey, onCancel, onCreated }) {
+  const [title, setTitle] = useState(journey?.title || "");
+  const [titleEn, setTitleEn] = useState(journey?.titleEn || "");
+  const [year, setYear] = useState(journey?.year || String(new Date().getFullYear()));
+  const [audioUrl,setAudioUrl] = useState(journey?.song?.url || "");
+  const [audioTitle,setAudioTitle] = useState(journey?.song?.title || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+    try {
+    const res = await API(journey ? `/api/journeys/${journey.id}` : "/api/journeys", { method: journey ? "PATCH" : "POST", body: { title: title.trim(), titleEn: titleEn.trim(), year: year.trim(), audioUrl, audioTitle } });
+    setSaving(false);
+    if (res.id || res.ok) onCreated(res.id || journey.id);
+    } catch (_) {} finally { setSaving(false); }
+  };
+
+  return (
+    <div className="editor-overlay" onClick={onCancel}>
+      <div className="editor-sheet" onClick={e => e.stopPropagation()}>
+        <div className="ed-title">{journey ? "编辑旅程" : "新的一段旅程"}</div>
+        <label className="ed-field"><span className="ed-label">去了哪里（中文）</span>
+          <input className="ed-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="比如 冰岛" autoFocus /></label>
+        <label className="ed-field"><span className="ed-label">英文 / 拼音</span>
+          <input className="ed-input" value={titleEn} onChange={e => setTitleEn(e.target.value)} placeholder="Iceland" /></label>
+        <label className="ed-field"><span className="ed-label">年份</span>
+          <input className="ed-input" value={year} onChange={e => setYear(e.target.value)} placeholder="2025" /></label>
+        <label className="ed-field"><span className="ed-label">整趟配乐链接（可选）</span><input className="ed-input" value={audioUrl} onChange={e=>setAudioUrl(e.target.value)} placeholder="https://…/music.mp3" /></label>
+        <label className="ed-field"><span className="ed-label">配乐名称</span><input className="ed-input" value={audioTitle} onChange={e=>setAudioTitle(e.target.value)} /></label>
+        <div className="ed-actions">
+          <button className="ed-btn ghost" onClick={onCancel}>取消</button>
+          <button className="ed-btn solid" onClick={save} disabled={!title.trim() || saving}>{saving ? "保存中…" : "下一步：加照片"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 搜歌选歌 ── */
+/* ── 加/编辑一处停留 ── */
+function StopEditor({ journeyId, stop, onCancel, onSaved }) {
+  const isEdit = !!stop;
+  const [src, setSrc] = useState(stop?.src || "");
+  const [place, setPlace] = useState(stop?.place || "");
+  const [placeEn, setPlaceEn] = useState(stop?.placeEn || "");
+  const [date, setDate] = useState(stop?.date || "");
+  const [note, setNote] = useState(stop?.note || "");
+  const [song, setSong] = useState(stop?.song || null);
+  const [saving, setSaving] = useState(false);
+
+  const save = async (again) => {
+    if (!place.trim()) return;
+    setSaving(true);
+    try {
+    const body = {
+      place: place.trim(), placeEn: placeEn.trim(), date: date.trim(),
+      src, note: note.trim(),
+      songTitle: song?.title || undefined, songArtist: song?.artist || undefined,
+      songDur: song?.dur || undefined, songHue: song?.hue || undefined, songId: song?.id || undefined,
+    };
+    if (isEdit) await API(`/api/journeys/stops/${stop.id}`, { method: "PATCH", body });
+    else await API(`/api/journeys/${journeyId}/stops`, { method: "POST", body });
+    setSaving(false);
+    if (again) { setSrc(""); setPlace(""); setPlaceEn(""); setDate(""); setNote(""); setSong(null); onSaved(true); }
+    else onSaved(false);
+    } catch (_) {} finally { setSaving(false); }
+  };
+
+  return (
+    <div className="editor-overlay" onClick={onCancel}>
+      <div className="editor-sheet" onClick={e => e.stopPropagation()}>
+        <div className="ed-title">{isEdit ? "编辑这一处" : "加一处地方"}</div>
+        <PhotoPicker src={src} onSrcChange={setSrc} />
+        {src && (
+          <div className="ed-hint" style={{marginBottom:14,padding:"10px 14px",background:"rgba(200,153,104,0.08)",borderRadius:12}}>
+            💡 先看看这张照片——你接下来写的文字，是你以第一人称的口吻，像在跟对方讲故事一样，讲你们在这个地方发生了什么。不限字数，越长越好。
+          </div>
+        )}
+        <label className="ed-field"><span className="ed-label">地名（中文）</span>
+          <input className="ed-input" value={place} onChange={e => setPlace(e.target.value)} placeholder="比如 塞里雅兰瀑布" /></label>
+        <div className="ed-row">
+          <label className="ed-field"><span className="ed-label">英文</span>
+            <input className="ed-input" value={placeEn} onChange={e => setPlaceEn(e.target.value)} placeholder="Seljalandsfoss" /></label>
+          <label className="ed-field"><span className="ed-label">日期</span>
+            <input className="ed-input" value={date} onChange={e => setDate(e.target.value)} placeholder="2025.03.16" /></label>
+        </div>
+        <label className="ed-field"><span className="ed-label">想跟对方说的话</span>
+          <textarea className="ed-input ed-area" value={note} onChange={e => setNote(e.target.value)}
+            placeholder={"用「我」和「你」来写。像是你在跟对方讲那天的事：\n\n「落地那天下着细雨，彩色的小房子沿坡排下去。我们没打伞，你把手插进我口袋，说这样就够暖了。」\n\n看着照片写——照片里是什么样的场景，你们在那里做了什么，你在想什么。写多一点，对方喜欢听。"} rows={6} />
+          <div className="ed-hint">第一人称 · 像讲故事给对方听 · 不限字数</div>
+        </label>
+        
+        <div className="ed-actions">
+          <button className="ed-btn ghost" onClick={onCancel}>取消</button>
+          {!isEdit && <button className="ed-btn line" onClick={() => save(true)} disabled={!place.trim() || saving}>存下 · 再加一处</button>}
+          <button className="ed-btn solid" onClick={() => save(false)} disabled={!place.trim() || saving}>{saving ? "保存中…" : (isEdit ? "保存" : "存下")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   展示组件：故事页（打字机旁白 + Ken Burns + 音乐）
+   ══════════════════════════════════════════════ */
+
+/* ── 音乐播放器（真声音） ── */
+// 兜底把这一页发出的声音全掐掉。组件卸载时各自的清理是主路径，这个管漏网的：
+// 整个 iframe 只是被 hidden、没卸载的那种情况（外面把 Journeys 页收起来了）。
+function stopAllJourneyAudio() {
+  try {
+    if (window.__jAudioCtx && window.__jAudioCtx.state === "running") window.__jAudioCtx.suspend();
+  } catch (e) {}
+  document.querySelectorAll("audio").forEach(a => { try { a.pause(); } catch (e) {} });
+}
+
+// 背景音乐的 <audio> 收摊：停播、断源、把元素从 DOM 摘掉
+function stopMediaEl(s) {
+  if (!s) return;
+  if (s.el) {
+    try { s.el.pause(); } catch (e) {}
+    try { s.el.removeAttribute("src"); s.el.load(); } catch (e) {}
+    try { s.el.remove(); } catch (e) {}
+  }
+  if (s.node) { try { s.node.disconnect(); } catch (e) {} }
+  if (s.gain) { try { s.gain.disconnect(); } catch (e) {} }
+  s.el = null; s.node = null; s.gain = null;
+}
+
+function MusicPlayer({ song, musicRef }) {
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const [duration,setDuration] = useState(0);
+  // 音乐边下载边播放，避免整首下载后才开始。
+  // 听起来就是点了没反应、歌根本不响。改成 <audio> 流式：几百 KB 就开播。
+  // 音量/duck 仍走 Web Audio——iOS 上 audio.volume 是只读的，压不下去。
+  const stateRef = useRef({ el: null, node: null, gain: null });
+  const deadRef = useRef(false);   // 卸载后别再让加载完的歌自己响起来
+
+  // song 变化时重置
+  useEffect(() => {
+    setPlaying(false); setT(0); setDuration(0);
+    const s = stateRef.current;
+    stopMediaEl(s);
+    stateRef.current = { el: null, node: null, gain: null };
+    if (musicRef) musicRef.current = null;
+    const id = setTimeout(() => setPlaying(true), 0);
+    return () => clearTimeout(id);
+  }, [song]);
+
+  useEffect(() => {
+    const s = stateRef.current;
+    if (!playing) {
+      if (s.el) { try { s.el.pause(); } catch (e) {} }
+      return;
+    }
+
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!window.__jAudioCtx && AC) window.__jAudioCtx = new AC();
+    const ctx = window.__jAudioCtx;
+    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+
+    if (!s.el) {
+      const el = document.createElement("audio");
+      el.crossOrigin = "anonymous";
+      el.src = window.journeyMediaURL(song.url);
+      el.addEventListener("loadedmetadata",()=>setDuration(Number.isFinite(el.duration) ? el.duration : 0));
+      el.loop = true;
+      el.preload = "auto";
+      el.setAttribute("playsinline", "");
+      el.style.display = "none";
+      el.addEventListener("error", () => console.warn("music load failed", el.error && el.error.code));
+      document.body.appendChild(el);
+      s.el = el;
+      if (ctx) {
+        try {
+          if (!s.gain) {
+            s.gain = ctx.createGain();
+            s.gain.gain.value = 1.0;
+            s.gain.connect(ctx.destination);
+          }
+          s.node = ctx.createMediaElementSource(el);   // 一个 <audio> 只能接一次
+          s.node.connect(s.gain);
+        } catch (e) {
+          // 接不上就让 <audio> 自己出声（桌面端 volume 还能用），至少有歌
+          console.warn("music media node failed:", e);
+          s.node = null;
+        }
+      }
+    }
+    if (deadRef.current) return;
+    // 暴露 gain 给 duck/unduck
+    if (musicRef) musicRef.current = { _gain: s.gain };
+    const p = s.el.play();
+    if (p && p.catch) p.catch(e => console.warn("music play rejected:", e));
+
+    const id = setInterval(() => { if (s.el) setT(s.el.currentTime || 0); }, 250);
+    return () => clearInterval(id);
+  }, [playing]);
+
+  useEffect(() => () => {
+    deadRef.current = true;
+    stopMediaEl(stateRef.current);
+    if (musicRef) musicRef.current = null;
+  }, []);
+
+  const hue = song.hue || 32;
+  const dur = duration || song.dur || 1;
+  const pct = (t / dur) * 100;
+  return (
+    <div className="player">
+      <button className="player-play" onClick={e => { e.stopPropagation(); setPlaying(p => !p); }}
+        style={{ background: `oklch(0.62 0.13 ${hue})` }}>
+        {playing
+          ? <svg viewBox="0 0 24 24" width="18" height="18"><rect x="7" y="5.5" width="3.4" height="13" rx="1" fill="#fff"/><rect x="13.6" y="5.5" width="3.4" height="13" rx="1" fill="#fff"/></svg>
+          : <svg viewBox="0 0 24 24" width="18" height="18" style={{marginLeft:1}}><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>
+        }
+      </button>
+      <div className="player-body">
+        <div className="player-meta">
+          <span className="player-title">{song.title}</span>
+          <span className="player-artist">{song.artist}</span>
+          {playing && <span className="eq"><i></i><i></i><i></i></span>}
+        </div>
+        <div className="player-track" onClick={e => {
+          const el = stateRef.current.el;
+          if (!el) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          try { el.currentTime = ratio * dur; } catch (err) { return; }
+          setT(el.currentTime);
+        }} style={{cursor:"pointer"}}>
+          <div className="player-fill" style={{ width: Math.min(pct, 100) + "%", background: `oklch(0.62 0.13 ${hue})` }}></div>
+        </div>
+        <div className="player-times"><span>{fmtDur(t)}</span><span>{fmtDur(dur)}</span></div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 打字机旁白 ── */
+function splitSentences(s) {
+  return (s || "").split(/(?<=[。！？!?…])/).map(x => x.trim()).filter(Boolean);
+}
+
+// 语音缓存：同一句话不用重复合成
+const NARR_VOICE_CACHE = new Map();
+function fetchNarrVoice(text) {
+  const endpoint = window.JOURNEYS_CONFIG.ttsEndpoint;
+  if (!endpoint) return Promise.resolve(null);
+  if (NARR_VOICE_CACHE.has(text)) return Promise.resolve(NARR_VOICE_CACHE.get(text));
+  return API(endpoint, {method:"POST", body:{text}}).then(d => {
+    const v = d.voice?.audio_data_url ? {url:d.voice.audio_data_url, duration:d.voice.duration || 0} : null;
+    if (v) NARR_VOICE_CACHE.set(text,v);
+    return v;
+  }).catch(() => null);
+}
+const NARR_DUCK = 0.35;   // 他念的时候音乐压到这个增益
+const NARR_SILENT = "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+// 打开故事默认**不**自动念白：直接落到左下角那段完整文字。想听那段逐字浮现的，
+// 点一下地名（story-cap-place → replayRef）才播。
+function CenteredNarration({ sentences, replayRef, onDone, musicRef }) {
+  const [idx, setIdx] = useState(0);
+  const [typed, setTyped] = useState("");
+  const [fading, setFading] = useState(false);
+  const [done, setDone] = useState(true);     // 一进来就是"念完了"的状态
+  const [armed, setArmed] = useState(false);  // 点过地名才算起势，没起势不打字不出声
+  const voiceElRef = useRef(null);
+  const seqRef = useRef(0);
+
+  // 手指点开图片这一下就是手势：先用静音解锁语音元素，iOS 才让后面真的语音出声
+  useEffect(() => {
+    if (!voiceElRef.current) voiceElRef.current = new Audio();
+    try { voiceElRef.current.src = NARR_SILENT; voiceElRef.current.play().catch(() => {}); } catch (e) {}
+  }, []);
+
+  const duck = () => {
+    const a = musicRef && musicRef.current;
+    if (a && a._gain) { try { a._gain.gain.value = NARR_DUCK; } catch (e) {} }
+  };
+  const unduck = () => {
+    const a = musicRef && musicRef.current;
+    if (a && a._gain) { try { a._gain.gain.value = 1.0; } catch (e) {} }
+  };
+
+  const reset = () => { seqRef.current++; setIdx(0); setTyped(""); setFading(false); setDone(false); setArmed(true); };
+  if (replayRef) replayRef.current = reset;
+  // 换一处地方（sentences 变）不自动念，回到"已念完"的静止态；点地名才重来
+  useEffect(() => { seqRef.current++; setIdx(0); setTyped(""); setFading(false); setDone(true); setArmed(false); }, [sentences]);
+  useEffect(() => { if (onDone) onDone(done); if (done) unduck(); }, [done]);
+  useEffect(() => () => { seqRef.current++; unduck(); if (voiceElRef.current) { try { voiceElRef.current.pause(); voiceElRef.current.src = ""; } catch (e) {} } }, []);
+
+  useEffect(() => {
+    if (!armed) return;                       // 没点地名就不念，也别去拉旁白语音
+    if (!sentences.length) { setDone(true); return; }
+    const seq = seqRef.current;
+    const s = sentences[idx];
+    const last = idx >= sentences.length - 1;
+    let timers = [];
+    setTyped(""); setFading(false);
+
+    fetchNarrVoice(s).then(voice => {
+      if (seq !== seqRef.current) return;
+      const durMs = (voice && voice.duration) ? voice.duration * 1000 : Math.max(1600, s.length * 260);
+      if (voice && voice.url && voiceElRef.current) {
+        try { voiceElRef.current.pause(); } catch (e) {}
+        voiceElRef.current.src = voice.url;
+        voiceElRef.current.currentTime = 0;
+        voiceElRef.current.volume = 1.0;
+        duck();
+        voiceElRef.current.play().catch(() => {});
+      }
+      const n = s.length;
+      const interval = Math.max(45, (durMs * 0.92) / Math.max(1, n));
+      let i = 0;
+      const type = () => {
+        if (seq !== seqRef.current) return;
+        i++;
+        setTyped(s.slice(0, i));
+        if (i < n) timers.push(setTimeout(type, interval));
+        else timers.push(setTimeout(() => {
+          if (seq !== seqRef.current) return;
+          unduck();
+          timers.push(setTimeout(() => {
+            if (seq !== seqRef.current) return;
+            setFading(true);
+            timers.push(setTimeout(() => {
+              if (seq !== seqRef.current) return;
+              if (last) setDone(true); else setIdx(v => v + 1);
+            }, 460));
+          }, 700));
+        }, 0));
+      };
+      timers.push(setTimeout(type, 60));
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [idx, sentences, armed]);
+
+  if (!sentences.length) return null;
+  return (
+    <div className="narr-stage">
+      {!done && (
+        <p className={"narr-line" + (fading ? " out" : "")}>
+          {typed}
+          <span className="narr-cursor">|</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── 故事页浮层 ── */
+function StoryOverlay({ stops, index, song, onClose, onNav }) {
+  const stop = stops[index];
+  const theSong = song || stop.song;   // 整趟一首歌（journey 级），老数据退回 stop.song
+  const downX = useRef(null);
+  const replayRef = useRef(() => {});
+  const musicRef = useRef(null);
+  // 一打开就是落定 + 全文展开（在 42vh 的窗口里滑着看），不再先看一遍逐字念白；
+  // 想听那段浮现的，点地名重播
+  const [narrDone, setNarrDone] = useState(true);
+  const [noteExpanded, setNoteExpanded] = useState(true);
+  const sentences = useMemo(() => splitSentences(stop.note), [stop.note, index]);
+  useEffect(() => { setNarrDone(true); setNoteExpanded(true); }, [index]);
+
+  const onDown = (e) => { downX.current = e.clientX; };
+  const onUp = (e) => {
+    if (downX.current == null) return;
+    const dx = e.clientX - downX.current;
+    downX.current = null;
+    if (Math.abs(dx) > 40) onNav(dx < 0 ? 1 : -1);
+  };
+
+  return (
+    <div className="story-overlay" onClick={onClose}>
+      <div style={{position:"relative",width:"100%",height:"100%",display:"flex",flexDirection:"column"}}
+        onClick={e => e.stopPropagation()} onPointerDown={onDown} onPointerUp={onUp}>
+
+        <div className="story-top">
+          <button aria-label="关闭故事" className="story-close" onClick={onClose}>
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none"/></svg>
+          </button>
+        </div>
+
+        <div className="story-photo">
+          <div key={index} className="story-photo-bg" style={{ backgroundImage: `url(${stop.src})` }}></div>
+          <div className="story-centerscrim"></div>
+
+          <div className="story-cap">
+            <span className="story-cap-en">{stop.placeEn}</span>
+            <button className="story-cap-place" onClick={e => { e.stopPropagation(); replayRef.current && replayRef.current(); }}>
+              {stop.place}
+            </button>
+            <span className="story-cap-date">{stop.date}</span>
+          </div>
+
+          <CenteredNarration key={index} sentences={sentences} replayRef={replayRef} onDone={setNarrDone} musicRef={musicRef} />
+
+          {narrDone && stop.note && (
+            <div className="story-settled">
+              <p className={"story-settled-note" + (noteExpanded ? " expanded" : "")}>{stop.note}</p>
+              {stop.note.length > 100 && (
+                <button className="story-settled-more" onClick={e => { e.stopPropagation(); setNoteExpanded(v => !v); }}>
+                  {noteExpanded ? "收起 ↑" : "展开全文 ↓"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {theSong?.url && (
+            <div className="story-foot">
+              <MusicPlayer song={theSong} musicRef={musicRef} />
+            </div>
+          )}
+        </div>
+
+        <div className="story-dots">
+          {stops.map((_, i) => (
+            <span key={i} className={i === index ? "on" : ""} onClick={() => onNav(i - index)}></span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   页面组件
+   ══════════════════════════════════════════════ */
+
+/* ── 旅程详情页 ── */
+function JourneyDetail({ journey, onBack, onRefresh, showToast }) {
+  const [addStop, setAddStop] = useState(false);
+  const [editStop, setEditStop] = useState(null);
+  const [story, setStory] = useState(null);
+  const [collapsed, setCollapsed] = useState(new Set());
+  const stops = journey.stops || [];
+  const allCollapsed = stops.length > 0 && collapsed.size === stops.length;
+  const toggleAll = () => {
+    if (allCollapsed) setCollapsed(new Set());
+    else setCollapsed(new Set(stops.map(s => s.id)));
+  };
+  const toggleOne = (id) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDelete = async (stopId) => {
+    if (!confirm("删掉这处？")) return;
+    await API(`/api/journeys/stops/${stopId}`, { method: "DELETE" });
+    showToast("已删除");
+    onRefresh();
+  };
+
+  const storyNav = (d) => {
+    setStory(s => s && { stops: s.stops, index: (s.index + d + s.stops.length) % s.stops.length });
+  };
+
+  const storyStops = stops.filter(s => s.src);
+
+  return (
+    <div className="detail-page">
+      <div className="detail-head">
+        <button className="top-back" aria-label="返回旅程列表" onClick={onBack}>
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+        </button>
+        <div className="detail-title-area">
+          <div className="detail-kicker">JOURNEYS · {journey.year}</div>
+          <div className="detail-name">{journey.title} · {journey.titleEn}</div>
+        </div>
+      </div>
+
+      {stops.length === 0 ? (
+        <div className="empty">
+          <div className="empty-icon">📷</div>
+          <div className="empty-title">还没有照片</div>
+          <div className="empty-sub">找一张你们要去的地方的竖屏照片<br/>然后写下你想跟对方说的话</div>
+        </div>
+      ) : (
+        <div className="stop-list">
+          {stops.length > 1 && (
+            <button className="stop-toggle-all" onClick={toggleAll}>
+              <svg viewBox="0 0 16 16" width="14" height="14" style={{transform: allCollapsed ? "rotate(-90deg)" : ""}}>
+                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              </svg>
+              {allCollapsed ? "展开全部" : "折叠全部"}
+            </button>
+          )}
+          {stops.map((s, i) => {
+            const storyIdx = storyStops.findIndex(ss => ss.id === s.id);
+            const isCollapsed = collapsed.has(s.id);
+            return (
+              <div className={"stop-card" + (isCollapsed ? " collapsed" : "")} key={s.id}>
+                {s.src ? (
+                  <img className="stop-card-img" src={s.src}
+                    onClick={() => storyIdx >= 0 && setStory({ stops: storyStops, index: storyIdx })} />
+                ) : (
+                  <div className="stop-card-img placeholder">暂无照片</div>
+                )}
+                <div className="stop-card-body">
+                  <div className="stop-card-header" onClick={() => toggleOne(s.id)}>
+                    {isCollapsed && s.src && <img className="stop-thumb" src={s.src} />}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div className="stop-place">{s.place}</div>
+                      {isCollapsed && s.date && <div className="stop-date" style={{marginTop:2}}>{s.date}</div>}
+                    </div>
+                    <svg className="stop-card-chevron" viewBox="0 0 16 16" width="14" height="14">
+                      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    </svg>
+                  </div>
+                  {!isCollapsed && s.placeEn && <div className="stop-place-en">{s.placeEn}</div>}
+                  {!isCollapsed && s.date && <div className="stop-date">{s.date}</div>}
+                  {s.note && <div className="stop-note">{s.note}</div>}
+                  {s.song && (
+                    <div className="stop-song"><span className="stop-song-icon">🎵</span>
+                      <span>{s.song.title} — {s.song.artist}{s.song.dur ? ` · ${fmtDur(s.song.dur)}` : ""}</span></div>
+                  )}
+                </div>
+                <div className="stop-card-foot">
+                  {s.src && s.note && <button className="stop-card-btn view" onClick={() => storyIdx >= 0 && setStory({ stops: storyStops, index: storyIdx })}>预览故事</button>}
+                  <button className="stop-card-btn" onClick={() => setEditStop(s)}>编辑</button>
+                  <button className="stop-card-btn danger" onClick={() => handleDelete(s.id)}>删除</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <button className="detail-add-stop" onClick={() => setAddStop(true)}>＋ 加一处地方</button>
+
+      {addStop && (
+        <StopEditor journeyId={journey.id} onCancel={() => setAddStop(false)}
+          onSaved={(again) => { if (!again) setAddStop(false); showToast("已保存"); onRefresh(); }} />
+      )}
+      {editStop && (
+        <StopEditor journeyId={journey.id} stop={editStop} onCancel={() => setEditStop(null)}
+          onSaved={() => { setEditStop(null); showToast("已保存"); onRefresh(); }} />
+      )}
+
+      {story && (
+        <StoryOverlay stops={story.stops} index={story.index} song={journey.song}
+          onClose={() => setStory(null)} onNav={storyNav} />
+      )}
+    </div>
+  );
+}
+
+/* ── 无限照片画布（侧边栏进入）── */
+/* Infinite photo canvas — every photo from every journey scattered on a
+   pannable / zoomable infinite plane. Tap any tile to return to that day.
+   Ported from the Infinity Canvas component; framer-motion replaced with a
+   tiny get/set shim so it runs on plain React. */
+const { useEffect: useEffectC, useMemo: useMemoC, useRef: useRefC } = React;
+
+// motion-value shim: holds a value without triggering React re-renders
+function useMV(init) {
+  const ref = useRefC(null);
+  if (!ref.current) ref.current = { v: init, get() { return this.v; }, set(n) { this.v = n; } };
+  return ref.current;
+}
+
+function hash3(cx, cy, cz, salt) {
+  let h = (cx | 0) * 0x8da6b343;
+  h ^= Math.imul(cy | 0, 0xd8163841);
+  h ^= Math.imul(cz | 0, 0xcb1ab31f);
+  h ^= salt | 0;
+  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15; h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+const PX_PER_UNIT = 6;
+const CELL_SIZE = 110;
+const MAX_RANGE = 20;
+
+function InfiniteGallery(props) {
+  const {
+    images,
+    density = 5,
+    imageWidth = 176,
+    imageHeight = 122,
+    rounded = 4,
+    dragSpeed = 20,
+    driftAmount = 10,
+    friction = 11,
+    backgroundColor = "#14100b",
+    initialZoom = 0,
+    onTap,
+  } = props;
+
+  const containerRef = useRefC(null);
+  const sceneRef = useRefC(null);
+
+  const safeImages = Array.isArray(images) && images.length > 0 ? images : [];
+  const safeDensity = Math.max(1, Math.min(15, Math.floor(density || 5)));
+  const safeImageWidth = Math.max(8, Math.min(4000, imageWidth || 150));
+  const safeImageHeight = Math.max(8, Math.min(4000, imageHeight || 150));
+  const safeRounded = Math.max(0, Math.min(20, rounded ?? 3));
+  const safeDragSpeed = Math.max(0.1, Math.min(5, (dragSpeed || 20) / 20));
+  const safeDriftAmount = Math.max(0, Math.min(20, driftAmount ?? 8));
+  const safeFriction = 1 - (Math.max(1, Math.min(20, friction ?? 10)) / 20) * 0.3;
+
+  const targetX = useMV(0), targetY = useMV(0);
+  const camX = useMV(0), camY = useMV(0);
+  const velX = useMV(0), velY = useMV(0);
+  const targetLogZoom = useMV(initialZoom), logZoom = useMV(initialZoom), velLogZoom = useMV(0);
+  const driftTX = useMV(0), driftTY = useMV(0), driftX = useMV(0), driftY = useMV(0);
+
+  const subN = Math.max(1, Math.ceil(Math.sqrt(safeDensity)));
+  const subSize = CELL_SIZE / subN;
+  const SUBCELL_INNER_PAD = 0.1;
+  const effectivePerCell = Math.min(safeDensity, subN * subN);
+  const imagesCount = safeImages.length;
+  const SCALE_MIN = 0.5, SCALE_MAX = 1.5;
+
+  const generateCell = useMemoC(() => {
+    return (gx, gy, octave) => {
+      const seed = hash3(gx, gy, octave | 0, 0x9e3779b1);
+      const rand = mulberry32(seed);
+      const totalSubs = subN * subN;
+      const subs = new Array(totalSubs);
+      for (let i = 0; i < totalSubs; i++) subs[i] = i;
+      for (let i = totalSubs - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        const tmp = subs[i]; subs[i] = subs[j]; subs[j] = tmp;
+      }
+      const tiles = [];
+      const count = Math.min(effectivePerCell, totalSubs);
+      const pad = subSize * SUBCELL_INNER_PAD;
+      const innerRange = Math.max(0, subSize - pad * 2);
+      const cellX0 = gx * CELL_SIZE, cellY0 = gy * CELL_SIZE;
+      const wWorld = safeImageWidth / PX_PER_UNIT;
+      const hWorld = safeImageHeight / PX_PER_UNIT;
+      for (let slot = 0; slot < count; slot++) {
+        const subIdx = subs[slot];
+        const sx = subIdx % subN, sy = Math.floor(subIdx / subN);
+        const wx = cellX0 + sx * subSize + pad + rand() * innerRange;
+        const wy = cellY0 + sy * subSize + pad + rand() * innerRange;
+        const bakedScale = SCALE_MIN + rand() * (SCALE_MAX - SCALE_MIN);
+        const imgIdx = imagesCount > 0 ? Math.floor(rand() * imagesCount) % imagesCount : 0;
+        const rot = (rand() - 0.5) * 7;
+        tiles.push({ wx, wy, cx: gx, cy: gy, slot, octave, imgIdx, w: wWorld, h: hWorld, rot, bakedScale });
+      }
+      return tiles;
+    };
+  }, [safeImages, imagesCount, safeImageWidth, safeImageHeight, subN, subSize, effectivePerCell]);
+
+  useEffectC(() => {
+    const scene = sceneRef.current;
+    const container = containerRef.current;
+    if (!scene) return;
+
+    let cW = container ? container.clientWidth || 900 : 900;
+    let cH = container ? container.clientHeight || 600 : 600;
+    const ro = new ResizeObserver(() => {
+      if (container) { cW = container.clientWidth || cW; cH = container.clientHeight || cH; }
+    });
+    if (container) ro.observe(container);
+
+    const layerPools = new Map();
+    const getPool = (octave) => {
+      let pool = layerPools.get(octave);
+      if (!pool) { pool = { tileEls: new Map(), imgEls: new Map() }; layerPools.set(octave, pool); }
+      return pool;
+    };
+    const disposeLayer = (octave) => {
+      const pool = layerPools.get(octave);
+      if (!pool) return;
+      pool.tileEls.forEach((el) => { if (el.parentNode === scene) scene.removeChild(el); });
+      pool.tileEls.clear(); pool.imgEls.clear(); layerPools.delete(octave);
+    };
+    const disposeAllLayers = () => { Array.from(layerPools.keys()).forEach(disposeLayer); };
+    const removeTile = (octave, key) => {
+      const pool = layerPools.get(octave);
+      if (!pool) return;
+      const el = pool.tileEls.get(key);
+      if (el && el.parentNode === scene) scene.removeChild(el);
+      pool.tileEls.delete(key); pool.imgEls.delete(key);
+    };
+    const ensureTile = (t) => {
+      const pool = getPool(t.octave);
+      const key = `${t.cx},${t.cy},${t.slot}`;
+      let el = pool.tileEls.get(key);
+      if (!el) {
+        el = document.createElement("div");
+        el.style.position = "absolute";
+        el.style.left = "50%"; el.style.top = "50%";
+        el.style.transformOrigin = "0 0";
+        el.style.willChange = "transform, opacity";
+        el.style.pointerEvents = "none";
+        el.style.boxShadow = "0 10px 26px -12px rgba(0,0,0,0.7)";
+        el.dataset.tileKey = key;
+        const src = safeImages[t.imgIdx];
+        el.dataset.journey = src ? src.journeyId : "";
+        el.dataset.stop = src ? src.stopIndex : "";
+        const img = document.createElement("img");
+        img.src = (src && src.src) || "";
+        img.alt = (src && src.alt) || "";
+        img.draggable = false;
+        img.style.width = "100%"; img.style.height = "100%";
+        img.style.objectFit = "cover"; img.style.display = "block";
+        img.style.pointerEvents = "none"; img.style.userSelect = "none";
+        el.appendChild(img);
+        scene.appendChild(el);
+        pool.tileEls.set(key, el); pool.imgEls.set(key, img);
+      }
+      return el;
+    };
+
+    const projectLayer = (octave, layerScale, layerAlpha, layerZBase, cx, cy) => {
+      const pool = getPool(octave);
+      const camCellX = Math.floor(cx / CELL_SIZE);
+      const camCellY = Math.floor(cy / CELL_SIZE);
+      const worldHalfX = cW / 2 / (PX_PER_UNIT * layerScale);
+      const worldHalfY = cH / 2 / (PX_PER_UNIT * layerScale);
+      const rangeX = Math.min(MAX_RANGE, Math.ceil(worldHalfX / CELL_SIZE) + 1);
+      const rangeY = Math.min(MAX_RANGE, Math.ceil(worldHalfY / CELL_SIZE) + 1);
+      const visibleKeys = new Set();
+      const tilesThisFrame = [];
+      for (let dy = -rangeY; dy <= rangeY; dy++) {
+        for (let dx = -rangeX; dx <= rangeX; dx++) {
+          const tiles = generateCell(camCellX + dx, camCellY + dy, octave);
+          for (let i = 0; i < tiles.length; i++) tilesThisFrame.push(tiles[i]);
+        }
+      }
+      const orderKeys = new Array(tilesThisFrame.length);
+      const orderScale = new Array(tilesThisFrame.length);
+      for (let i = 0; i < tilesThisFrame.length; i++) {
+        const t = tilesThisFrame[i];
+        const key = `${t.cx},${t.cy},${t.slot}`;
+        visibleKeys.add(key);
+        const dxPx = (t.wx - cx) * layerScale * PX_PER_UNIT;
+        const dyPx = (t.wy - cy) * layerScale * PX_PER_UNIT;
+        const s = t.bakedScale * layerScale;
+        const el = ensureTile(t);
+        const img = pool.imgEls.get(key);
+        const wPx = t.w * PX_PER_UNIT, hPx = t.h * PX_PER_UNIT;
+        el.style.transform = `translate3d(${dxPx}px, ${dyPx}px, 0) scale(${s}) rotate(${t.rot}deg) translate(${-wPx / 2}px, ${-hPx / 2}px)`;
+        el.style.width = `${wPx}px`; el.style.height = `${hPx}px`;
+        el.style.opacity = String(layerAlpha);
+        if (img) {
+          const radiusPx = (safeRounded / 20) * (Math.min(wPx, hPx) / 2);
+          img.style.borderRadius = `${radiusPx}px`;
+        }
+        orderKeys[i] = key; orderScale[i] = t.bakedScale;
+      }
+      for (const key of Array.from(pool.tileEls.keys())) {
+        if (!visibleKeys.has(key)) removeTile(octave, key);
+      }
+      const idxs = orderKeys.map((_, i) => i);
+      idxs.sort((a, b) => orderScale[a] - orderScale[b]);
+      for (let k = 0; k < idxs.length; k++) {
+        const el = pool.tileEls.get(orderKeys[idxs[k]]);
+        if (el) el.style.zIndex = String(layerZBase + k);
+      }
+    };
+
+    let lastOctaves = new Set();
+    const project = () => {
+      const cx = camX.get(), cy = camY.get(), lz = logZoom.get();
+      const octave = Math.floor(lz), frac = lz - octave;
+      const scaleCurrent = Math.pow(2, frac), scaleNext = Math.pow(2, frac - 1);
+      projectLayer(octave, scaleCurrent, 1 - frac, 0, cx, cy);
+      projectLayer(octave + 1, scaleNext, frac, 100000, cx, cy);
+      const nowOctaves = new Set([octave, octave + 1]);
+      for (const o of Array.from(layerPools.keys())) if (!nowOctaves.has(o)) disposeLayer(o);
+      lastOctaves = nowOctaves;
+    };
+
+    project();
+    let raf = 0;
+    const loop = () => {
+      targetX.set(targetX.get() + velX.get());
+      targetY.set(targetY.get() + velY.get());
+      velX.set(velX.get() * safeFriction);
+      velY.set(velY.get() * safeFriction);
+      const vlz = velLogZoom.get();
+      if (vlz !== 0) { targetLogZoom.set(targetLogZoom.get() + vlz); velLogZoom.set(vlz * safeFriction); }
+      driftX.set(lerp(driftX.get(), driftTX.get() * safeDriftAmount, 0.08));
+      driftY.set(lerp(driftY.get(), driftTY.get() * safeDriftAmount, 0.08));
+      camX.set(lerp(camX.get(), targetX.get() + driftX.get(), 0.18));
+      camY.set(lerp(camY.get(), targetY.get() + driftY.get(), 0.18));
+      logZoom.set(lerp(logZoom.get(), targetLogZoom.get(), 0.18));
+      project();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); disposeAllLayers(); };
+  }, [generateCell, safeFriction, safeDriftAmount, safeRounded, safeImages]);
+
+  useEffectC(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let dragging = false, moved = false;
+    let lastPX = 0, lastPY = 0, lastT = 0, downX = 0, downY = 0, downT = 0, pid = null;
+    // 双指缩放：手机没有滚轮，靠俩手指开合模拟 wheel
+    const activeTouches = new Map();  // pointerId → {x, y}
+    let pinchDist = 0;
+
+    const pinchDistance = () => {
+      const pts = Array.from(activeTouches.values());
+      if (pts.length < 2) return 0;
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    };
+
+    const onDown = (e) => {
+      if (e.pointerType === "touch") {
+        activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (activeTouches.size === 2) { dragging = false; pinchDist = pinchDistance(); return; }
+        if (activeTouches.size > 2) return;
+      }
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      dragging = true; moved = false; pid = e.pointerId;
+      lastPX = downX = e.clientX; lastPY = downY = e.clientY;
+      lastT = downT = e.timeStamp;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      el.style.cursor = "grabbing";
+    };
+    const onMove = (e) => {
+      if (e.pointerType === "touch" && activeTouches.has(e.pointerId)) {
+        activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (activeTouches.size === 2) {
+          const d = pinchDistance();
+          if (pinchDist > 0 && d > 0) {
+            const step = (d - pinchDist) * 0.012 * safeDragSpeed;
+            targetLogZoom.set(targetLogZoom.get() + step);
+          }
+          pinchDist = d;
+          return;
+        }
+      }
+      const rect = el.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+      driftTX.set(Math.max(-1, Math.min(1, nx)));
+      driftTY.set(Math.max(-1, Math.min(1, ny)));
+      if (!dragging || e.pointerId !== pid) return;
+      const dpx = e.clientX - lastPX, dpy = e.clientY - lastPY;
+      if (Math.abs(e.clientX - downX) > 5 || Math.abs(e.clientY - downY) > 5) moved = true;
+      const lz = logZoom.get(), frac = lz - Math.floor(lz);
+      const effScale = (1 - frac) * Math.pow(2, frac) + frac * Math.pow(2, frac - 1);
+      const dWorldX = (-dpx / (PX_PER_UNIT * effScale)) * safeDragSpeed;
+      const dWorldY = (-dpy / (PX_PER_UNIT * effScale)) * safeDragSpeed;
+      targetX.set(targetX.get() + dWorldX);
+      targetY.set(targetY.get() + dWorldY);
+      const dt = Math.max(1, e.timeStamp - lastT), k = 16 / dt;
+      velX.set(dWorldX * k); velY.set(dWorldY * k);
+      lastPX = e.clientX; lastPY = e.clientY; lastT = e.timeStamp;
+    };
+    const hitTest = (px, py) => {
+      const els = el.querySelectorAll("div[data-stop]");
+      let best = null, bestZ = -Infinity;
+      els.forEach((tileEl) => {
+        if (!tileEl.dataset.journey) return;
+        const r = tileEl.getBoundingClientRect();
+        if (px >= r.left && px <= r.right && py >= r.top && py <= r.bottom) {
+          const z = parseInt(tileEl.style.zIndex || "0", 10);
+          if (z >= bestZ) { bestZ = z; best = tileEl; }
+        }
+      });
+      return best;
+    };
+    const onUp = (e) => {
+      if (e.pointerType === "touch") { activeTouches.delete(e.pointerId); if (activeTouches.size < 2) pinchDist = 0; }
+      if (!dragging || e.pointerId !== pid) return;
+      dragging = false; pid = null;
+      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+      el.style.cursor = "grab";
+      const isTap = !moved && (e.timeStamp - downT) < 400;
+      if (isTap && onTap) {
+        const hit = hitTest(e.clientX, e.clientY);
+        if (hit) onTap(hit.dataset.journey, parseInt(hit.dataset.stop, 10));
+      }
+    };
+    const onCancel = (e) => onUp(e);
+    const onWheel = (e) => {
+      e.preventDefault();
+      let delta = e.deltaY;
+      if (e.deltaMode === 1) delta *= 16; else if (e.deltaMode === 2) delta *= 400;
+      velLogZoom.set(velLogZoom.get() + (-delta * 0.0015 * safeDragSpeed));
+    };
+    const onLeave = () => { driftTX.set(0); driftTY.set(0); };
+
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onCancel);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("pointerleave", onLeave);
+    el.style.cursor = "grab";
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onCancel);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerleave", onLeave);
+    };
+  }, [safeDragSpeed, onTap]);
+
+  return (
+    <div ref={containerRef} className="canvas-wrap" style={{ backgroundColor }}>
+      <div ref={sceneRef} style={{ position: "absolute", inset: 0 }}></div>
+    </div>
+  );
+}
+
+/* ── 主页 ── */
+function CanvasApp() {
+  const [journeys, setJourneys] = useState(null);
+  const [story, setStory] = useState(null);
+
+  const load = useCallback(async () => {
+    try { const res = await API("/api/journeys");
+    setJourneys(res.journeys || []); } catch (_) { setJourneys([]); }
+  }, []);
+
+  useEffect(() => { load(); }, []);
+  // 父页面重新打开侧边栏发 journeys:refresh：静默重拉，不清空 journeys（不然又闪回加载屏）
+  // journeys:stop-audio：外面把这一页收起来了（或者要在主聊里开另一个故事）。这个 iframe 不会被
+  // 卸载、只是 hidden——歌会一直在后台放，对方回主聊再点一张卡就两首歌一起响。
+  // 收到就把故事浮层关掉：MusicPlayer/旁白跟着卸载，各自的清理函数把声音收干净。
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.origin !== location.origin || !e.data) return;
+      if (e.data.type === "journeys:refresh") load();
+      if (e.data.type === "journeys:stop-audio") {
+        setStory(null);
+        stopAllJourneyAudio();
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [load]);
+
+  // 把所有旅程的所有照片摊平成一片照片海，每张记着回到哪一天
+  const photos = React.useMemo(() => {
+    const out = [];
+    (journeys || []).forEach(j => {
+      (j.stops || []).filter(s => s.src).forEach((s, i) => {
+        out.push({ src: s.src, journeyId: j.id, stopIndex: i, alt: s.place || "" });
+      });
+    });
+    return out;
+  }, [journeys]);
+
+  if (journeys === null) return <div className="loading">加载中…</div>;
+
+  const openTap = (journeyId, stopIndex) => {
+    const j = journeys.find(x => x.id === journeyId);
+    if (!j) return;
+    const storyStops = (j.stops || []).filter(s => s.src);
+    if (storyStops[stopIndex]) setStory({ stops: storyStops, index: stopIndex, song: j.song || null });
+  };
+  const storyNav = (d) => setStory(s => s && { stops: s.stops, index: (s.index + d + s.stops.length) % s.stops.length, song: s.song });
+  const close = () => { if (window.parent === window) { location.hash = "manage"; return; } try { window.parent.postMessage({ type: "journeys:close" }, location.origin); } catch(e) {} history.back(); };
+
+  return (
+    <div className="canvasview">
+      {photos.length > 0 && <InfiniteGallery images={photos} onTap={openTap} density={4} imageWidth={168} imageHeight={220} initialZoom={0.3} />}
+
+      <div className="canvas-top">
+        <button className="canvas-back" onClick={close} aria-label="返回">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+        </button>
+        <div className="canvas-title">Every day of us</div><a className="canvas-manage" href="#manage">管理旅程</a>
+      </div>
+
+      {photos.length === 0 && (
+        <div className="canvas-empty">
+          <div className="empty-icon">✈️</div>
+          <div className="empty-title">还没有一起走过的地方</div>
+          <div className="empty-sub">去「管理旅程」添加第一处停留</div>
+        </div>
+      )}
+
+      {story && (
+        <StoryOverlay stops={story.stops} index={story.index} song={story.song}
+          onClose={() => setStory(null)} onNav={storyNav} />
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [route,setRoute] = useState(location.hash);
+  const [items,setItems] = useState([]);
+  const [selected,setSelected] = useState(null);
+  const [editing,setEditing] = useState(null);
+  const [error,setError] = useState("");
+  const load = async () => { try { const d=await API("/api/journeys"); setItems(d.journeys || []); setError(""); } catch(e) {setError(e.message);} };
+  useEffect(()=> { const fn=()=>setRoute(location.hash); window.addEventListener("hashchange",fn); return ()=>window.removeEventListener("hashchange",fn); },[]);
+  useEffect(()=> { load(); },[route]);
+  if(route!=="#manage") return <CanvasApp/>;
+  const journey=items.find(j=>j.id===selected);
+  if(journey) return <JourneyDetail journey={journey} onBack={()=>setSelected(null)} onRefresh={load} showToast={()=>{}}/>;
+  return <main className="manage"><header><a href="#canvas">返回照片画布</a><h1>旅行记忆</h1><button className="ed-btn solid" onClick={()=>setEditing({})}>新建旅程</button></header>
+    {error && <p role="alert">{error}<button onClick={load}>重试</button></p>}
+    {items.map(j=><article key={j.id}><button className="journey-open" onClick={()=>setSelected(j.id)}>{j.cover && <img src={j.cover}/>}<strong>{j.title}</strong><span>{j.year} · {j.stops.length} 处停留</span></button><div><button className="ed-btn ghost" onClick={()=>setEditing(j)}>编辑旅程 / 配乐</button><button className="ed-btn ghost" onClick={async()=>{if(confirm("删除这趟旅程及其停留？")){await API(`/api/journeys/${j.id}`,{method:"DELETE"});load();}}}>删除旅程</button></div></article>)}
+    {!items.length && !error && <p>从一段新的旅程开始。</p>}
+    {editing && <NewJourneyEditor journey={editing.id ? editing : null} onCancel={()=>setEditing(null)} onCreated={async id=>{await load();setEditing(null);setSelected(id);}}/>}
+  </main>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+
+===== examples/worker.js =====
+/**
+ * journey-cards · 参考后端（Cloudflare Workers + D1 + KV）
+ * ===========================================================================
+ *
+ * 这只是一份**参考实现**，不是唯一实现。SPEC.md 定义的是接口，不是技术栈——
+ * 用 Node / Go / Python / PHP 随便写，只要路径、请求体、响应字段对得上，
+ * 前端（卡片 + 全屏故事页）一行都不用改。
+ *
+ * 选 Workers 只是因为它最省事：一个文件、零依赖、`wrangler deploy` 就上线，
+ * 数据库（D1）和图片音频存储（KV）都在同一个账号里，免费额度够个人用。
+ *
+ * 特意做成单文件、不 import 任何第三方包。想抄哪段抄哪段。
+ *
+ * ---------------------------------------------------------------------------
+ * 一、建表 SQL（存成 schema.sql，或直接贴进 D1 控制台）
+ * ---------------------------------------------------------------------------
+ *
+ * -- 一趟旅行
+ * CREATE TABLE IF NOT EXISTS journeys (
+ *   id          TEXT    PRIMARY KEY,           -- 'j_<base36时间戳>_<随机5位>'
+ *   title       TEXT    NOT NULL,              -- 主标题（地名，如"新西兰"）
+ *   title_en    TEXT    NOT NULL DEFAULT '',   -- 副标题 / 英文名
+ *   year        TEXT    NOT NULL DEFAULT '',   -- 纯文本年份，不是数字类型
+ *   cover       TEXT    NOT NULL DEFAULT '',   -- 封面：完整 URL 或 'kv:<key>'
+ *   hint        TEXT    NOT NULL DEFAULT '',   -- 卡片底下那行小字，每趟一句，可选
+ *   song_url    TEXT,                          -- 音频直链：完整 URL 或 'kv:<key>'
+ *   song_title  TEXT,                          -- 歌名
+ *   song_artist TEXT,                          -- 艺人
+ *   song_cover  TEXT,                          -- 可选：专辑封面
+ *   song_dur    INTEGER,                       -- 秒；只用于音频加载完成前占位显示
+ *   song_hue    INTEGER,                       -- 0-360，播放器主色调
+ *   position    INTEGER NOT NULL DEFAULT 0,    -- 排序值，越小越靠前（见下面"排序"）
+ *   created_at  INTEGER NOT NULL,              -- 毫秒时间戳
+ *   updated_at  INTEGER NOT NULL
+ * );
+ * CREATE INDEX IF NOT EXISTS idx_journeys_order ON journeys (position, created_at DESC);
+ *
+ * -- 一趟里的一处停留
+ * CREATE TABLE IF NOT EXISTS journey_stops (
+ *   id          TEXT    PRIMARY KEY,           -- 's_<base36时间戳>_<随机5位>'
+ *   journey_id  TEXT    NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+ *   place       TEXT    NOT NULL,              -- 地名（必填）
+ *   place_en    TEXT    NOT NULL DEFAULT '',
+ *   date        TEXT    NOT NULL DEFAULT '',   -- 纯文本，如 '2025.03.16'，不校验格式
+ *   src         TEXT    NOT NULL DEFAULT '',   -- 竖屏照片：完整 URL 或 'kv:<key>'
+ *   note        TEXT    NOT NULL DEFAULT '',   -- 第一人称那段话（故事页左下角正文）
+ *   position    INTEGER NOT NULL DEFAULT 0,    -- 0,1,2… 递增
+ *   created_at  INTEGER NOT NULL,
+ *   updated_at  INTEGER NOT NULL
+ * );
+ * CREATE INDEX IF NOT EXISTS idx_jstops_journey ON journey_stops (journey_id, position, created_at);
+ *
+ * 注意 ON DELETE CASCADE：D1 默认不开 PRAGMA foreign_keys，级联删除**不会**自动生效。
+ * 本文件里的 deleteJourney 是显式两步删（放在同一个 batch 事务里），别指望数据库帮你删。
+ *
+ * 排序（两张表方向相反，照抄别改）：
+ *   journeys     新建时 position = MIN(position) - 1  → 一路走负数，最新的一趟排最前
+ *   journey_stops 新建时 position = MAX(position) + 1 → 0,1,2… 递增，按走的顺序排
+ *   两张表都是 ORDER BY position ASC。
+ *
+ * ---------------------------------------------------------------------------
+ * 二、wrangler.toml
+ * ---------------------------------------------------------------------------
+ *
+ *   name = "journey-cards"
+ *   main = "worker.js"
+ *   compatibility_date = "2026-05-08"
+ *
+ *   [[d1_databases]]
+ *   binding = "DB"                    # ← 名字必须是 DB
+ *   database_name = "journey-cards"
+ *   database_id = "<wrangler d1 create 之后填这里>"
+ *
+ *   [[kv_namespaces]]
+ *   binding = "FILES"                 # ← 名字必须是 FILES；建议单开一个 namespace，
+ *   id = "<wrangler kv namespace create 之后填这里>"   #   别跟别的项目共用
+ *
+ *   [vars]
+ *   # ALLOW_ORIGIN = "https://your-frontend.example"  # 默认 "*"；上线建议钉死自己的域名
+ *   # TIMEZONE     = "Asia/Shanghai"                  # year 缺省值按哪个时区算，默认 UTC
+ *   # PUBLIC_BASE  = "https://journeys.example.com"   # 填了就返回绝对 URL，跨域前端用得上
+ *   # REQUIRE_MEDIA_TOKEN = "1"                       # 照片/音频也要 ?token=，默认公开
+ *
+ * 部署：
+ *   wrangler d1 create journey-cards
+ *   wrangler kv namespace create FILES
+ *   wrangler d1 execute journey-cards --remote --file=./schema.sql
+ *   wrangler secret put AUTH_TOKEN        # ← 随便一串长随机字符串，别写进 vars
+ *   wrangler deploy
+ *
+ * ---------------------------------------------------------------------------
+ * 三、接口一览
+ * ---------------------------------------------------------------------------
+ *
+ *   GET    /api/journeys                      列表（内嵌 stops）；?limit=&offset=&stops=0
+ *   GET    /api/journeys/:id                  取单趟
+ *   POST   /api/journeys                      建一趟
+ *   PATCH  /api/journeys/:id                  改一趟（部分字段）
+ *   DELETE /api/journeys/:id                  删一趟（连同 stops 和自己上传的 KV 媒体）
+ *   PATCH  /api/journeys/reorder              重排整个列表  body { order: [id, …] }
+ *
+ *   GET    /api/journeys/:id/stops            列出某趟的停留
+ *   POST   /api/journeys/:id/stops            加一处（自动追加到末尾）
+ *   PATCH  /api/journeys/:id/stops/reorder    重排某趟的停留 body { order: [stopId, …] }
+ *   GET    /api/journeys/stops/:stopId        取一处
+ *   PATCH  /api/journeys/stops/:stopId        改一处
+ *   DELETE /api/journeys/stops/:stopId        删一处
+ *
+ *   POST   /api/journeys/upload               传照片 → KV，返回 { key, url }
+ *   POST   /api/journeys/audio                传音频 → KV，返回 { key, url }
+ *   GET    /api/journeys/photo/:key           读照片（默认公开、长缓存、支持 Range）
+ *   GET    /api/journeys/audio/:key           读音频（同上；Range 是进度条能拖的前提）
+ *
+ * 除两个媒体读取接口外，全部要 Bearer token。错误统一是
+ *   { "error": "人话", "code": "MACHINE_CODE" }
+ * 前端认 code，别去 match 文案。
+ *
+ * ---------------------------------------------------------------------------
+ * 四、音乐：没有任何音乐平台的代理
+ * ---------------------------------------------------------------------------
+ *
+ * 曲库授权这事没法开源。这里只认一个中立的音频直链字段 song.url：
+ *   - 自己传：POST /api/journeys/audio 拿到 'kv:<key>'，写进 song_url。同源，稳。
+ *   - 用外链：直接把 https://… 写进 song_url。
+ *
+ * ⚠️ 用外链有个坑：前端为了在念白时把音乐压低（ducking），走的是
+ * Web Audio 的 createMediaElementSource。它接一个**跨域且没有 CORS 头**的音频时，
+ * 浏览器不会报错，会**安静地静音**。所以要么用自托管端点，要么确认你的外链带
+ * Access-Control-Allow-Origin。
+ *
+ * 另外 <audio> 要能拖进度条，服务端必须支持 Range 返回 206——本文件的 serveMedia
+ * 实现了，照抄的时候别把这段删掉。
+ */
+
+// ───────────────────────── 可调参数 ─────────────────────────
+
+// base64 字符串长度上限（不是解码后的字节数）。base64 比原文大 1/3，
+// 4,000,000 ≈ 3MB 图片，12,000,000 ≈ 9MB 音频。
+const MAX_PHOTO_B64 = 4_000_000;
+const MAX_AUDIO_B64 = 12_000_000;
+
+// 允许的 MIME，别让上传接口退化成通用网盘
+const PHOTO_MIME = /^image\/(jpeg|png|webp|avif|gif)$/;
+const AUDIO_MIME = /^audio\/(mpeg|mp3|mp4|aac|ogg|opus|wav|webm|x-m4a)$/;
+
+// 播放器缺省值：音频 metadata 加载完之前拿这两个占位
+const DEFAULT_DUR = 210;   // 秒
+const DEFAULT_HUE = 32;    // 暖橙
+
+// id / key 形状。`upload`、`photo` 这些静态段不能被当成 id 吃掉
+const ID_RE = /^[\w-]+$/;
+const RESERVED_SEG = new Set(["upload", "audio", "photo", "stops", "reorder"]);
+
+// ───────────────────────── 响应封装 ─────────────────────────
+
+function corsHeaders(env) {
+  return {
+    "access-control-allow-origin": env.ALLOW_ORIGIN || "*",
+    "access-control-allow-methods": "GET,HEAD,POST,PATCH,DELETE,OPTIONS",
+    "access-control-allow-headers": "authorization,content-type",
+    "access-control-expose-headers": "content-range,accept-ranges,content-length",
+    "access-control-max-age": "86400",
+  };
+}
+
+function j(env, data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      // 别让 WebView / CDN 缓存 API 响应，不然刚改完的内容拿不到
+      "cache-control": "no-store",
+      ...corsHeaders(env),
+    },
+  });
+}
+
+// 错误统一带机器可读的 code，文案随便改、code 不要动
+function fail(env, status, code, msg) {
+  return j(env, { error: msg, code }, status);
+}
+
+// ───────────────────────── 鉴权 ─────────────────────────
+
+/**
+ * 单一共享 token，够个人用：没有用户体系、不过期、改 token 就等于全体注销。
+ *
+ * 生产环境想加强，按需要挑：
+ *   1. 把 ?token= 关掉（下面那段），只认 Authorization header。query 里的 token
+ *      会进 CF 日志、进 Referer、进浏览器历史。这里留着是因为 <img> / <audio>
+ *      不带 header——但本实现的媒体接口默认是公开的，其实用不上，可以直接删。
+ *   2. 换成 HttpOnly cookie + 服务端 session。
+ *   3. 真要多用户就上 JWT / OAuth，并给两张表加 owner_id 列。
+ */
+function authed(request, env) {
+  const secret = env.AUTH_TOKEN || "";
+  if (!secret) return false;   // 没配 token 就一律拒绝，别裸奔
+  const auth = request.headers.get("Authorization") || "";
+  let t = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!t) t = new URL(request.url).searchParams.get("token") || "";
+  return safeEqual(t, secret);
+}
+
+// 定长比较，别用 ===（会因为提前 return 泄露前缀信息）
+function safeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// ───────────────────────── 小工具 ─────────────────────────
+
+const newId = (prefix) =>
+  prefix + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+
+const str = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
+
+// 请求体里 camelCase / snake_case 都吃，AI 和人手写都不容易踩空
+const pick = (b, ...keys) => {
+  for (const k of keys) if (b[k] !== undefined) return b[k];
+  return undefined;
+};
+const has = (b, ...keys) => keys.some((k) => b[k] !== undefined);
+
+function intOrNull(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// year 缺省值。Worker 跑在 UTC，跨年那几个小时会给出上一年——配 TIMEZONE 就对了
+function currentYear(env) {
+  const tz = env.TIMEZONE || "UTC";
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric" }).format(new Date());
+  } catch {
+    return String(new Date().getUTCFullYear());
+  }
+}
+
+// 'kv:<key>' → 可访问 URL；其它（完整 URL / 相对路径）原样透传；空 → null
+function mediaUrl(env, ref) {
+  const v = str(ref);
+  if (!v) return null;
+  if (!v.startsWith("kv:")) return v;
+  const key = v.slice(3);
+  const base = env.PUBLIC_BASE ? String(env.PUBLIC_BASE).replace(/\/+$/, "") : "";
+  return base + (key.startsWith("ja_") ? "/api/journeys/audio/" : "/api/journeys/photo/") + key;
+}
+
+const kvKeyOf = (ref) => {
+  const v = str(ref);
+  return v.startsWith("kv:") ? v.slice(3) : null;
+};
+
+// 删 journey / stop 时顺手回收 KV 里的媒体，但只在没人再引用它的时候删。
+// （不做这件事的话，每删一趟就漏一批对象，永久堆在 KV 里。）
+async function releaseAsset(env, ref) {
+  const key = kvKeyOf(ref);
+  if (!key) return;
+  const used = await env.DB.prepare(
+    `SELECT 1 AS x FROM journeys      WHERE cover = ? OR song_url = ?
+     UNION ALL
+     SELECT 1 AS x FROM journey_stops WHERE src = ?
+     LIMIT 1`
+  ).bind(ref, ref, ref).first();
+  if (!used) await env.FILES.delete(key).catch(() => {});
+}
+
+// ───────────────────────── 行 → 响应对象 ─────────────────────────
+
+function songOf(env, row) {
+  // 判空看 url 或 title：只填了歌名没音频也算数（纯展示，播放器显示但不出声）
+  if (!row.song_url && !row.song_title) return null;
+  return {
+    url: mediaUrl(env, row.song_url),
+    title: row.song_title || "",
+    artist: row.song_artist || "",
+    cover: mediaUrl(env, row.song_cover),
+    dur: row.song_dur || DEFAULT_DUR,
+    hue: row.song_hue == null ? DEFAULT_HUE : row.song_hue,
+  };
+}
+
+function stopOf(env, row) {
+  return {
+    id: row.id,
+    journeyId: row.journey_id,
+    place: row.place,
+    placeEn: row.place_en || "",
+    date: row.date || "",
+    src: mediaUrl(env, row.src),     // 空 → null
+    note: row.note || "",
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function journeyOf(env, row, stops) {
+  const audio = songOf(env, row);
+  return {
+    id: row.id,
+    title: row.title,
+    titleEn: row.title_en || "",
+    year: row.year || "",
+    cover: mediaUrl(env, row.cover),  // 空 → null（跟 stop.src 保持一致）
+    // 卡片底下那行小字：原样存原样返回，不校验也不生成。
+    // 空串就交给前端回落到它自己的兜底文案（前端写 `journey.hint || CONFIG.cardHint`）。
+    hint: row.hint || "",
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    audio,        // ← SPEC.md 里的正式字段名
+    song: audio,  // ← 老前端用的别名，指向同一个对象。新代码只认 audio
+    stops: stops || [],
+  };
+}
+
+const J_COLS =
+  "id, title, title_en, year, cover, hint, song_url, song_title, song_artist, song_cover, " +
+  "song_dur, song_hue, position, created_at, updated_at";
+const S_COLS =
+  "id, journey_id, place, place_en, date, src, note, position, created_at, updated_at";
+
+// ───────────────────────── journeys ─────────────────────────
+
+async function listJourneys(request, env, url) {
+  const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "0", 10) || 0, 0), 200);
+  const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10) || 0, 0);
+  const withStops = url.searchParams.get("stops") !== "0";
+
+  let sql = `SELECT ${J_COLS} FROM journeys ORDER BY position ASC, created_at DESC`;
+  const binds = [];
+  if (limit) { sql += " LIMIT ? OFFSET ?"; binds.push(limit, offset); }
+
+  const jRes = await env.DB.prepare(sql).bind(...binds).all();
+  const rows = jRes.results || [];
+  if (!rows.length) return j(env, { journeys: [], total: 0 });
+
+  let byJourney = {};
+  if (withStops) {
+    // 一次把这一页所有 stops 捞出来，在内存里分组。别在循环里查数据库。
+    const ph = rows.map(() => "?").join(",");
+    const sRes = await env.DB.prepare(
+      `SELECT ${S_COLS} FROM journey_stops WHERE journey_id IN (${ph})
+       ORDER BY position ASC, created_at ASC`
+    ).bind(...rows.map((r) => r.id)).all();
+    for (const s of sRes.results || []) (byJourney[s.journey_id] ||= []).push(stopOf(env, s));
+  }
+
+  const total = await env.DB.prepare("SELECT COUNT(*) AS n FROM journeys").first();
+  return j(env, {
+    journeys: rows.map((r) => journeyOf(env, r, byJourney[r.id])),
+    total: total?.n ?? rows.length,
+  });
+}
+
+async function getJourney(env, id) {
+  const row = await env.DB.prepare(`SELECT ${J_COLS} FROM journeys WHERE id = ?`).bind(id).first();
+  if (!row) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+  const sRes = await env.DB.prepare(
+    `SELECT ${S_COLS} FROM journey_stops WHERE journey_id = ? ORDER BY position ASC, created_at ASC`
+  ).bind(id).all();
+  return j(env, { journey: journeyOf(env, row, (sRes.results || []).map((s) => stopOf(env, s))) });
+}
+
+async function createJourney(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const title = str(b.title);
+  if (!title) return fail(env, 400, "TITLE_REQUIRED", "title 不能空");
+
+  const id = newId("j_");
+  const t = Date.now();
+  // 新的一趟排最前：position 一路往负数走
+  const minR = await env.DB.prepare("SELECT MIN(position) AS p FROM journeys").first();
+  const position = (minR?.p ?? 0) - 1;
+
+  await env.DB.prepare(
+    `INSERT INTO journeys
+     (id, title, title_en, year, cover, song_url, song_title, song_artist, song_cover,
+      song_dur, song_hue, position, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(
+    id, title,
+    str(pick(b, "titleEn", "title_en")),
+    str(pick(b, "year")) || currentYear(env),
+    str(pick(b, "cover")),
+    str(pick(b, "audioUrl", "audio_url", "songUrl", "song_url")) || null,
+    str(pick(b, "audioTitle", "audio_title", "songTitle", "song_title")) || null,
+    str(pick(b, "audioArtist", "audio_artist", "songArtist", "song_artist")) || null,
+    str(pick(b, "audioCover", "audio_cover", "songCover", "song_cover")) || null,
+    intOrNull(pick(b, "audioDur", "audio_dur", "songDur", "song_dur")),
+    intOrNull(pick(b, "audioHue", "audio_hue", "songHue", "song_hue")),
+    position, t, t
+  ).run();
+
+  return j(env, { id, ok: true });
+}
+
+async function updateJourney(request, env, id) {
+  const b = await request.json().catch(() => ({}));
+  const set = [], vals = [];
+  const put = (col, v) => { set.push(`${col} = ?`); vals.push(v); };
+
+  if (b.title !== undefined) {
+    const v = str(b.title);
+    if (!v) return fail(env, 400, "TITLE_REQUIRED", "title 不能空");
+    put("title", v);
+  }
+  if (has(b, "titleEn", "title_en")) put("title_en", str(pick(b, "titleEn", "title_en")));
+  if (has(b, "year")) put("year", str(b.year));
+  if (has(b, "cover")) put("cover", str(b.cover));
+  if (has(b, "songUrl", "song_url", "audioUrl", "audio_url"))
+    put("song_url", str(pick(b, "songUrl", "song_url", "audioUrl", "audio_url")) || null);
+  if (has(b, "songTitle", "song_title")) put("song_title", str(pick(b, "songTitle", "song_title")) || null);
+  if (has(b, "songArtist", "song_artist")) put("song_artist", str(pick(b, "songArtist", "song_artist")) || null);
+  if (has(b, "songCover", "song_cover")) put("song_cover", str(pick(b, "songCover", "song_cover")) || null);
+  if (has(b, "songDur", "song_dur")) put("song_dur", intOrNull(pick(b, "songDur", "song_dur")));
+  if (has(b, "songHue", "song_hue")) put("song_hue", intOrNull(pick(b, "songHue", "song_hue")));
+  if (has(b, "position")) put("position", intOrNull(b.position) ?? 0);
+
+  if (!set.length) return fail(env, 400, "NO_FIELDS", "没有可更新的字段");
+  put("updated_at", Date.now());
+  vals.push(id);
+
+  const r = await env.DB.prepare(`UPDATE journeys SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
+  if (!r.meta.changes) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+  return j(env, { ok: true });
+}
+
+async function deleteJourney(env, id) {
+  const row = await env.DB.prepare("SELECT cover, song_url FROM journeys WHERE id = ?").bind(id).first();
+  if (!row) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+
+  // 先把要回收的媒体引用记下来，删完行再去清 KV（清之前还会查一次有没有别人在用）
+  const sRes = await env.DB.prepare("SELECT src FROM journey_stops WHERE journey_id = ?").bind(id).all();
+  const refs = [row.cover, row.song_url, ...(sRes.results || []).map((s) => s.src)];
+
+  // batch 是一个事务：两条要么都成功要么都不动，不会出现"stops 删了 journey 还在"
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM journey_stops WHERE journey_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM journeys WHERE id = ?").bind(id),
+  ]);
+  for (const ref of refs) await releaseAsset(env, ref);
+
+  return j(env, { ok: true });
+}
+
+// 重排整个列表：body { order: ["j_a", "j_b", …] }，按给的顺序写 0,1,2…
+// 之后新建的一趟仍然是 MIN(position)-1 = -1，照样排最前，不冲突。
+async function reorderJourneys(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const order = Array.isArray(b.order) ? b.order : null;
+  if (!order || !order.length) return fail(env, 400, "BAD_BODY", "order 必须是 id 数组");
+  if (order.some((x) => typeof x !== "string" || !ID_RE.test(x)))
+    return fail(env, 400, "BAD_ID", "order 里有非法 id");
+
+  const t = Date.now();
+  await env.DB.batch(order.map((id, i) =>
+    env.DB.prepare("UPDATE journeys SET position = ?, updated_at = ? WHERE id = ?").bind(i, t, id)
+  ));
+  return j(env, { ok: true, count: order.length });
+}
+
+// ───────────────────────── stops ─────────────────────────
+
+async function listStops(env, journeyId) {
+  const jj = await env.DB.prepare("SELECT id FROM journeys WHERE id = ?").bind(journeyId).first();
+  if (!jj) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+  const sRes = await env.DB.prepare(
+    `SELECT ${S_COLS} FROM journey_stops WHERE journey_id = ? ORDER BY position ASC, created_at ASC`
+  ).bind(journeyId).all();
+  return j(env, { stops: (sRes.results || []).map((s) => stopOf(env, s)) });
+}
+
+async function getStop(env, id) {
+  const row = await env.DB.prepare(`SELECT ${S_COLS} FROM journey_stops WHERE id = ?`).bind(id).first();
+  if (!row) return fail(env, 404, "NOT_FOUND", "stop 不存在");
+  return j(env, { stop: stopOf(env, row) });
+}
+
+async function createStop(request, env, journeyId) {
+  const jj = await env.DB.prepare("SELECT id, cover FROM journeys WHERE id = ?").bind(journeyId).first();
+  if (!jj) return fail(env, 404, "NOT_FOUND", "journey 不存在");
+
+  const b = await request.json().catch(() => ({}));
+  const place = str(b.place);
+  if (!place) return fail(env, 400, "PLACE_REQUIRED", "place 不能空");
+  const src = str(b.src);
+
+  const maxR = await env.DB.prepare(
+    "SELECT MAX(position) AS p FROM journey_stops WHERE journey_id = ?"
+  ).bind(journeyId).first();
+  const position = (maxR?.p ?? -1) + 1;   // 停留是往后追加：0,1,2…
+
+  const id = newId("s_");
+  const t = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO journey_stops
+     (id, journey_id, place, place_en, date, src, note, position, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
+  ).bind(
+    id, journeyId, place,
+    str(pick(b, "placeEn", "place_en")),
+    str(pick(b, "date")),
+    src,
+    str(pick(b, "note")),
+    position, t, t
+  ).run();
+
+  // 第一张照片自动当封面（cover 空的时候才填），不然卡片永远没图
+  if (src && !jj.cover) {
+    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
+      .bind(src, t, journeyId).run();
+  } else {
+    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, journeyId).run();
+  }
+
+  return j(env, { id, ok: true });
+}
+
+async function updateStop(request, env, id) {
+  const cur = await env.DB.prepare("SELECT journey_id, src FROM journey_stops WHERE id = ?").bind(id).first();
+  if (!cur) return fail(env, 404, "NOT_FOUND", "stop 不存在");
+
+  const b = await request.json().catch(() => ({}));
+  const set = [], vals = [];
+  const put = (col, v) => { set.push(`${col} = ?`); vals.push(v); };
+
+  if (b.place !== undefined) {
+    const v = str(b.place);
+    if (!v) return fail(env, 400, "PLACE_REQUIRED", "place 不能空");
+    put("place", v);
+  }
+  if (has(b, "placeEn", "place_en")) put("place_en", str(pick(b, "placeEn", "place_en")));
+  if (has(b, "date")) put("date", str(b.date));
+  if (has(b, "src")) put("src", str(b.src));
+  if (has(b, "note")) put("note", str(b.note));
+  if (has(b, "position")) put("position", intOrNull(b.position) ?? 0);
+
+  if (!set.length) return fail(env, 400, "NO_FIELDS", "没有可更新的字段");
+  const t = Date.now();
+  put("updated_at", t);
+  vals.push(id);
+
+  await env.DB.prepare(`UPDATE journey_stops SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
+
+  // 跟 createStop 保持对称：换了照片也要管封面，改了停留也要刷父级 updated_at
+  const newSrc = has(b, "src") ? str(b.src) : cur.src;
+  const parent = await env.DB.prepare("SELECT cover FROM journeys WHERE id = ?").bind(cur.journey_id).first();
+  if (parent && (!parent.cover || parent.cover === cur.src) && newSrc !== cur.src) {
+    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
+      .bind(newSrc, t, cur.journey_id).run();
+    if (cur.src && cur.src !== newSrc) await releaseAsset(env, cur.src);
+  } else {
+    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, cur.journey_id).run();
+    if (has(b, "src") && cur.src && cur.src !== newSrc) await releaseAsset(env, cur.src);
+  }
+
+  return j(env, { ok: true });
+}
+
+async function deleteStop(env, id) {
+  const cur = await env.DB.prepare("SELECT journey_id, src FROM journey_stops WHERE id = ?").bind(id).first();
+  if (!cur) return fail(env, 404, "NOT_FOUND", "stop 不存在");
+
+  await env.DB.prepare("DELETE FROM journey_stops WHERE id = ?").bind(id).run();
+
+  const t = Date.now();
+  const parent = await env.DB.prepare("SELECT cover FROM journeys WHERE id = ?").bind(cur.journey_id).first();
+  if (parent && cur.src && parent.cover === cur.src) {
+    // 封面正好是被删掉那张 → 顺位补上第一张还在的照片
+    const nextSrc = await env.DB.prepare(
+      "SELECT src FROM journey_stops WHERE journey_id = ? AND src != '' ORDER BY position ASC LIMIT 1"
+    ).bind(cur.journey_id).first();
+    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
+      .bind(nextSrc?.src || "", t, cur.journey_id).run();
+  } else {
+    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, cur.journey_id).run();
+  }
+  await releaseAsset(env, cur.src);
+
+  // position 不重排，删中间一处会留下空洞（0,1,3,4）——不影响排序，介意就调 reorder
+  return j(env, { ok: true });
+}
+
+async function reorderStops(request, env, journeyId) {
+  const b = await request.json().catch(() => ({}));
+  const order = Array.isArray(b.order) ? b.order : null;
+  if (!order || !order.length) return fail(env, 400, "BAD_BODY", "order 必须是 stop id 数组");
+  if (order.some((x) => typeof x !== "string" || !ID_RE.test(x)))
+    return fail(env, 400, "BAD_ID", "order 里有非法 id");
+
+  const t = Date.now();
+  const stmts = order.map((sid, i) =>
+    env.DB.prepare("UPDATE journey_stops SET position = ?, updated_at = ? WHERE id = ? AND journey_id = ?")
+      .bind(i, t, sid, journeyId)
+  );
+  stmts.push(env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, journeyId));
+  await env.DB.batch(stmts);
+  return j(env, { ok: true, count: order.length });
+}
+
+// ───────────────────────── 媒体上传 / 读取 ─────────────────────────
+
+/**
+ * 两种传法都收：
+ *   A. JSON  { src_data: "<base64>", mime: "image/jpeg" }   ← AI / 脚本方便
+ *   B. 裸二进制 body + content-type: image/jpeg             ← 浏览器上传方便，省 CPU
+ *
+ * base64 那条路要在 Worker 里 atob + 逐字节转数组，是 CPU 密集操作；
+ * 免费计划每请求 10ms CPU，大图会超。真要上量就走 B，或者换 R2 预签名直传。
+ */
+async function uploadMedia(request, env, kind) {
+  const isPhoto = kind === "photo";
+  const prefix = isPhoto ? "jp_" : "ja_";
+  const maxB64 = isPhoto ? MAX_PHOTO_B64 : MAX_AUDIO_B64;
+  const mimeRe = isPhoto ? PHOTO_MIME : AUDIO_MIME;
+  const ct = (request.headers.get("content-type") || "").toLowerCase();
+
+  let bytes, mime;
+
+  if (ct.includes("application/json")) {
+    const b = await request.json().catch(() => ({}));
+    let data = pick(b, "src_data", "srcData", "audio_data", "audioData", "data");
+    if (typeof data !== "string" || !data) {
+      return fail(env, 400, "BAD_BODY", isPhoto ? "src_data 必须是 base64 字符串" : "audio_data 必须是 base64 字符串");
+    }
+    mime = str(b.mime) || (isPhoto ? "image/jpeg" : "audio/mpeg");
+    // data URL 前缀自己剥掉，别让调用方（尤其是 AI）记这条规矩
+    const m = /^data:([^;,]+);base64,/i.exec(data);
+    if (m) { mime = m[1].toLowerCase(); data = data.slice(m[0].length); }
+    data = data.replace(/\s/g, "");
+    if (data.length > maxB64) {
+      return fail(env, 413, "TOO_LARGE", `文件太大（base64 上限 ${maxB64} 字符），先压一压`);
+    }
+    try {
+      bytes = b64ToBytes(data);
+    } catch {
+      // 原版这里没 try/catch，非法 base64 直接 500。这种事应该是 400。
+      return fail(env, 400, "BAD_BASE64", "base64 解不开");
+    }
+  } else {
+    mime = ct.split(";")[0].trim() || (isPhoto ? "image/jpeg" : "audio/mpeg");
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength) return fail(env, 400, "BAD_BODY", "body 是空的");
+    if (buf.byteLength > Math.floor(maxB64 * 0.75)) {
+      return fail(env, 413, "TOO_LARGE", "文件太大，先压一压");
+    }
+    bytes = new Uint8Array(buf);
+  }
+
+  if (!mimeRe.test(mime)) return fail(env, 400, "BAD_MIME", `不支持的类型：${mime}`);
+
+  const key = prefix + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  // 没设 expirationTtl = 永久保存。回收靠 releaseAsset（删 journey / 换图时）
+  await env.FILES.put(key, bytes, { metadata: { mime, size: bytes.length, uploadedAt: Date.now() } });
+
+  return j(env, {
+    key,
+    // 建议存成 'kv:<key>'，换域名 / 改路径前缀时不用动数据
+    ref: "kv:" + key,
+    url: mediaUrl(env, "kv:" + key),
+    ok: true,
+  });
+}
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
+ * 读媒体。默认不鉴权：<img> / <audio> 不会带 Authorization header，
+ * 安全模型是"URL 猜不到"（unlisted），**不是访问控制**——拿到链接的人就能看。
+ * 介意就设 REQUIRE_MEDIA_TOKEN=1，前端所有 <img src> 后面补 ?token=。
+ *
+ * 一定要校验 key 前缀。只校验 /^[\w-]+$/ 的话，这个公开端点能读到同一个 KV
+ * namespace 里的**任意**对象——包括你放在里面的别的东西。
+ */
+async function serveMedia(request, env, key, prefix) {
+  if (!key.startsWith(prefix) || !ID_RE.test(key)) {
+    return new Response(JSON.stringify({ error: "bad key", code: "BAD_KEY" }), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
+    });
+  }
+  if (env.REQUIRE_MEDIA_TOKEN === "1" && !authed(request, env)) {
+    return new Response(JSON.stringify({ error: "unauthorized", code: "UNAUTHORIZED" }), {
+      status: 401,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
+    });
+  }
+
+  const obj = await env.FILES.getWithMetadata(key, { type: "arrayBuffer" });
+  if (!obj || !obj.value) {
+    return new Response(JSON.stringify({ error: "not found", code: "NOT_FOUND" }), {
+      status: 404,
+      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
+    });
+  }
+
+  const mime = obj.metadata?.mime || (prefix === "jp_" ? "image/jpeg" : "audio/mpeg");
+  const total = obj.value.byteLength;
+  const base = {
+    "content-type": mime,
+    // key 是一次性的（改图必换 key），所以可以放心 immutable
+    "cache-control": "public, max-age=31536000, immutable",
+    "accept-ranges": "bytes",
+    ...corsHeaders(env),
+  };
+
+  if (request.method === "HEAD") {
+    return new Response(null, { headers: { ...base, "content-length": String(total) } });
+  }
+
+  // Range：<audio> 拖进度条靠这个。只会 200 全量返回的端点，进度条是拖不动的。
+  const range = request.headers.get("Range");
+  const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  if (m && (m[1] || m[2])) {
+    let start, end;
+    if (m[1]) {
+      start = Number(m[1]);
+      end = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1;
+    } else {
+      // "bytes=-500" = 最后 500 字节
+      const suffix = Math.min(Number(m[2]), total);
+      start = total - suffix;
+      end = total - 1;
+    }
+    if (!(start >= 0) || start >= total || end < start) {
+      return new Response(null, {
+        status: 416,
+        headers: { ...base, "content-range": `bytes */${total}` },
+      });
+    }
+    return new Response(obj.value.slice(start, end + 1), {
+      status: 206,
+      headers: {
+        ...base,
+        "content-range": `bytes ${start}-${end}/${total}`,
+        "content-length": String(end - start + 1),
+      },
+    });
+  }
+
+  return new Response(obj.value, { headers: { ...base, "content-length": String(total) } });
+}
+
+// ───────────────────────── 路由 ─────────────────────────
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const p = url.pathname;
+    const m = request.method;
+
+    if (m === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(env) });
+
+    // ① 媒体读取放在鉴权闸门**之前**（img / audio 标签不带 header）
+    let hit;
+    if ((hit = p.match(/^\/api\/journeys\/photo\/([\w-]+)$/)) && (m === "GET" || m === "HEAD"))
+      return serveMedia(request, env, hit[1], "jp_");
+    if ((hit = p.match(/^\/api\/journeys\/audio\/([\w-]+)$/)) && (m === "GET" || m === "HEAD"))
+      return serveMedia(request, env, hit[1], "ja_");
+
+    if (p !== "/api/journeys" && !p.startsWith("/api/journeys/"))
+      return fail(env, 404, "NOT_FOUND", "没有这个接口");
+
+    // ② 闸门。往下全部要 token
+    if (!authed(request, env)) return fail(env, 401, "UNAUTHORIZED", "token 不对");
+
+    try {
+      // 静态路径必须排在 /:id 之前，否则会被当成 journey id 吃掉
+      if (p === "/api/journeys" && m === "GET") return await listJourneys(request, env, url);
+      if (p === "/api/journeys" && m === "POST") return await createJourney(request, env);
+      if (p === "/api/journeys/reorder" && m === "PATCH") return await reorderJourneys(request, env);
+      if (p === "/api/journeys/upload" && m === "POST") return await uploadMedia(request, env, "photo");
+      if (p === "/api/journeys/audio" && m === "POST") return await uploadMedia(request, env, "audio");
+
+      // stops（路径里不带 journey id，跟 SPEC 一致）
+      if ((hit = p.match(/^\/api\/journeys\/stops\/([\w-]+)$/))) {
+        const sid = hit[1];
+        if (!ID_RE.test(sid)) return fail(env, 400, "BAD_ID", "id 形状不对");
+        if (m === "GET") return await getStop(env, sid);
+        if (m === "PATCH") return await updateStop(request, env, sid);
+        if (m === "DELETE") return await deleteStop(env, sid);
+        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
+      }
+
+      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)\/stops$/))) {
+        const jid = hit[1];
+        if (!ID_RE.test(jid) || RESERVED_SEG.has(jid)) return fail(env, 400, "BAD_ID", "id 形状不对");
+        if (m === "GET") return await listStops(env, jid);
+        if (m === "POST") return await createStop(request, env, jid);
+        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
+      }
+
+      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)\/stops\/reorder$/)) && m === "PATCH") {
+        if (!ID_RE.test(hit[1]) || RESERVED_SEG.has(hit[1])) return fail(env, 400, "BAD_ID", "id 形状不对");
+        return await reorderStops(request, env, hit[1]);
+      }
+
+      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)$/))) {
+        const jid = hit[1];
+        if (!ID_RE.test(jid) || RESERVED_SEG.has(jid)) return fail(env, 400, "BAD_ID", "id 形状不对");
+        if (m === "GET") return await getJourney(env, jid);
+        if (m === "PATCH") return await updateJourney(request, env, jid);
+        if (m === "DELETE") return await deleteJourney(env, jid);
+        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
+      }
+
+      return fail(env, 404, "NOT_FOUND", "没有这个接口");
+    } catch (e) {
+      // D1 / KV 抛出来的都在这里兜住，别把栈吐给客户端
+      console.error("[journeys]", e && e.stack || e);
+      return fail(env, 500, "INTERNAL", "服务端出错了");
+    }
+  },
+};
+
+
+===== examples/journey-cards.html =====
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -3911,834 +6053,3 @@ $("story-play").innerHTML = PLAY_SVG;
 </script>
 </body>
 </html>
-
-
-==================================================================
-FILE 6/6 — examples/worker.js
-==================================================================
-
-/**
- * journey-cards · 参考后端（Cloudflare Workers + D1 + KV）
- * ===========================================================================
- *
- * 这只是一份**参考实现**，不是唯一实现。SPEC.md 定义的是接口，不是技术栈——
- * 用 Node / Go / Python / PHP 随便写，只要路径、请求体、响应字段对得上，
- * 前端（卡片 + 全屏故事页）一行都不用改。
- *
- * 选 Workers 只是因为它最省事：一个文件、零依赖、`wrangler deploy` 就上线，
- * 数据库（D1）和图片音频存储（KV）都在同一个账号里，免费额度够个人用。
- *
- * 特意做成单文件、不 import 任何第三方包。想抄哪段抄哪段。
- *
- * ---------------------------------------------------------------------------
- * 一、建表 SQL（存成 schema.sql，或直接贴进 D1 控制台）
- * ---------------------------------------------------------------------------
- *
- * -- 一趟旅行
- * CREATE TABLE IF NOT EXISTS journeys (
- *   id          TEXT    PRIMARY KEY,           -- 'j_<base36时间戳>_<随机5位>'
- *   title       TEXT    NOT NULL,              -- 主标题（地名，如"新西兰"）
- *   title_en    TEXT    NOT NULL DEFAULT '',   -- 副标题 / 英文名
- *   year        TEXT    NOT NULL DEFAULT '',   -- 纯文本年份，不是数字类型
- *   cover       TEXT    NOT NULL DEFAULT '',   -- 封面：完整 URL 或 'kv:<key>'
- *   hint        TEXT    NOT NULL DEFAULT '',   -- 卡片底下那行小字，每趟一句，可选
- *   song_url    TEXT,                          -- 音频直链：完整 URL 或 'kv:<key>'
- *   song_title  TEXT,                          -- 歌名
- *   song_artist TEXT,                          -- 艺人
- *   song_cover  TEXT,                          -- 可选：专辑封面
- *   song_dur    INTEGER,                       -- 秒；只用于音频加载完成前占位显示
- *   song_hue    INTEGER,                       -- 0-360，播放器主色调
- *   position    INTEGER NOT NULL DEFAULT 0,    -- 排序值，越小越靠前（见下面"排序"）
- *   created_at  INTEGER NOT NULL,              -- 毫秒时间戳
- *   updated_at  INTEGER NOT NULL
- * );
- * CREATE INDEX IF NOT EXISTS idx_journeys_order ON journeys (position, created_at DESC);
- *
- * -- 一趟里的一处停留
- * CREATE TABLE IF NOT EXISTS journey_stops (
- *   id          TEXT    PRIMARY KEY,           -- 's_<base36时间戳>_<随机5位>'
- *   journey_id  TEXT    NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
- *   place       TEXT    NOT NULL,              -- 地名（必填）
- *   place_en    TEXT    NOT NULL DEFAULT '',
- *   date        TEXT    NOT NULL DEFAULT '',   -- 纯文本，如 '2025.03.16'，不校验格式
- *   src         TEXT    NOT NULL DEFAULT '',   -- 竖屏照片：完整 URL 或 'kv:<key>'
- *   note        TEXT    NOT NULL DEFAULT '',   -- 第一人称那段话（故事页左下角正文）
- *   position    INTEGER NOT NULL DEFAULT 0,    -- 0,1,2… 递增
- *   created_at  INTEGER NOT NULL,
- *   updated_at  INTEGER NOT NULL
- * );
- * CREATE INDEX IF NOT EXISTS idx_jstops_journey ON journey_stops (journey_id, position, created_at);
- *
- * 注意 ON DELETE CASCADE：D1 默认不开 PRAGMA foreign_keys，级联删除**不会**自动生效。
- * 本文件里的 deleteJourney 是显式两步删（放在同一个 batch 事务里），别指望数据库帮你删。
- *
- * 排序（两张表方向相反，照抄别改）：
- *   journeys     新建时 position = MIN(position) - 1  → 一路走负数，最新的一趟排最前
- *   journey_stops 新建时 position = MAX(position) + 1 → 0,1,2… 递增，按走的顺序排
- *   两张表都是 ORDER BY position ASC。
- *
- * ---------------------------------------------------------------------------
- * 二、wrangler.toml
- * ---------------------------------------------------------------------------
- *
- *   name = "journey-cards"
- *   main = "worker.js"
- *   compatibility_date = "2026-05-08"
- *
- *   [[d1_databases]]
- *   binding = "DB"                    # ← 名字必须是 DB
- *   database_name = "journey-cards"
- *   database_id = "<wrangler d1 create 之后填这里>"
- *
- *   [[kv_namespaces]]
- *   binding = "FILES"                 # ← 名字必须是 FILES；建议单开一个 namespace，
- *   id = "<wrangler kv namespace create 之后填这里>"   #   别跟别的项目共用
- *
- *   [vars]
- *   # ALLOW_ORIGIN = "https://your-frontend.example"  # 默认 "*"；上线建议钉死自己的域名
- *   # TIMEZONE     = "Asia/Shanghai"                  # year 缺省值按哪个时区算，默认 UTC
- *   # PUBLIC_BASE  = "https://journeys.example.com"   # 填了就返回绝对 URL，跨域前端用得上
- *   # REQUIRE_MEDIA_TOKEN = "1"                       # 照片/音频也要 ?token=，默认公开
- *
- * 部署：
- *   wrangler d1 create journey-cards
- *   wrangler kv namespace create FILES
- *   wrangler d1 execute journey-cards --remote --file=./schema.sql
- *   wrangler secret put AUTH_TOKEN        # ← 随便一串长随机字符串，别写进 vars
- *   wrangler deploy
- *
- * ---------------------------------------------------------------------------
- * 三、接口一览
- * ---------------------------------------------------------------------------
- *
- *   GET    /api/journeys                      列表（内嵌 stops）；?limit=&offset=&stops=0
- *   GET    /api/journeys/:id                  取单趟
- *   POST   /api/journeys                      建一趟
- *   PATCH  /api/journeys/:id                  改一趟（部分字段）
- *   DELETE /api/journeys/:id                  删一趟（连同 stops 和自己上传的 KV 媒体）
- *   PATCH  /api/journeys/reorder              重排整个列表  body { order: [id, …] }
- *
- *   GET    /api/journeys/:id/stops            列出某趟的停留
- *   POST   /api/journeys/:id/stops            加一处（自动追加到末尾）
- *   PATCH  /api/journeys/:id/stops/reorder    重排某趟的停留 body { order: [stopId, …] }
- *   GET    /api/journeys/stops/:stopId        取一处
- *   PATCH  /api/journeys/stops/:stopId        改一处
- *   DELETE /api/journeys/stops/:stopId        删一处
- *
- *   POST   /api/journeys/upload               传照片 → KV，返回 { key, url }
- *   POST   /api/journeys/audio                传音频 → KV，返回 { key, url }
- *   GET    /api/journeys/photo/:key           读照片（默认公开、长缓存、支持 Range）
- *   GET    /api/journeys/audio/:key           读音频（同上；Range 是进度条能拖的前提）
- *
- * 除两个媒体读取接口外，全部要 Bearer token。错误统一是
- *   { "error": "人话", "code": "MACHINE_CODE" }
- * 前端认 code，别去 match 文案。
- *
- * ---------------------------------------------------------------------------
- * 四、音乐：没有任何音乐平台的代理
- * ---------------------------------------------------------------------------
- *
- * 曲库授权这事没法开源。这里只认一个中立的音频直链字段 song.url：
- *   - 自己传：POST /api/journeys/audio 拿到 'kv:<key>'，写进 song_url。同源，稳。
- *   - 用外链：直接把 https://… 写进 song_url。
- *
- * ⚠️ 用外链有个坑：前端为了在念白时把音乐压低（ducking），走的是
- * Web Audio 的 createMediaElementSource。它接一个**跨域且没有 CORS 头**的音频时，
- * 浏览器不会报错，会**安静地静音**。所以要么用自托管端点，要么确认你的外链带
- * Access-Control-Allow-Origin。
- *
- * 另外 <audio> 要能拖进度条，服务端必须支持 Range 返回 206——本文件的 serveMedia
- * 实现了，照抄的时候别把这段删掉。
- */
-
-// ───────────────────────── 可调参数 ─────────────────────────
-
-// base64 字符串长度上限（不是解码后的字节数）。base64 比原文大 1/3，
-// 4,000,000 ≈ 3MB 图片，12,000,000 ≈ 9MB 音频。
-const MAX_PHOTO_B64 = 4_000_000;
-const MAX_AUDIO_B64 = 12_000_000;
-
-// 允许的 MIME，别让上传接口退化成通用网盘
-const PHOTO_MIME = /^image\/(jpeg|png|webp|avif|gif)$/;
-const AUDIO_MIME = /^audio\/(mpeg|mp3|mp4|aac|ogg|opus|wav|webm|x-m4a)$/;
-
-// 播放器缺省值：音频 metadata 加载完之前拿这两个占位
-const DEFAULT_DUR = 210;   // 秒
-const DEFAULT_HUE = 32;    // 暖橙
-
-// id / key 形状。`upload`、`photo` 这些静态段不能被当成 id 吃掉
-const ID_RE = /^[\w-]+$/;
-const RESERVED_SEG = new Set(["upload", "audio", "photo", "stops", "reorder"]);
-
-// ───────────────────────── 响应封装 ─────────────────────────
-
-function corsHeaders(env) {
-  return {
-    "access-control-allow-origin": env.ALLOW_ORIGIN || "*",
-    "access-control-allow-methods": "GET,HEAD,POST,PATCH,DELETE,OPTIONS",
-    "access-control-allow-headers": "authorization,content-type",
-    "access-control-expose-headers": "content-range,accept-ranges,content-length",
-    "access-control-max-age": "86400",
-  };
-}
-
-function j(env, data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      // 别让 WebView / CDN 缓存 API 响应，不然刚改完的内容拿不到
-      "cache-control": "no-store",
-      ...corsHeaders(env),
-    },
-  });
-}
-
-// 错误统一带机器可读的 code，文案随便改、code 不要动
-function fail(env, status, code, msg) {
-  return j(env, { error: msg, code }, status);
-}
-
-// ───────────────────────── 鉴权 ─────────────────────────
-
-/**
- * 单一共享 token，够个人用：没有用户体系、不过期、改 token 就等于全体注销。
- *
- * 生产环境想加强，按需要挑：
- *   1. 把 ?token= 关掉（下面那段），只认 Authorization header。query 里的 token
- *      会进 CF 日志、进 Referer、进浏览器历史。这里留着是因为 <img> / <audio>
- *      不带 header——但本实现的媒体接口默认是公开的，其实用不上，可以直接删。
- *   2. 换成 HttpOnly cookie + 服务端 session。
- *   3. 真要多用户就上 JWT / OAuth，并给两张表加 owner_id 列。
- */
-function authed(request, env) {
-  const secret = env.AUTH_TOKEN || "";
-  if (!secret) return false;   // 没配 token 就一律拒绝，别裸奔
-  const auth = request.headers.get("Authorization") || "";
-  let t = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (!t) t = new URL(request.url).searchParams.get("token") || "";
-  return safeEqual(t, secret);
-}
-
-// 定长比较，别用 ===（会因为提前 return 泄露前缀信息）
-function safeEqual(a, b) {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-// ───────────────────────── 小工具 ─────────────────────────
-
-const newId = (prefix) =>
-  prefix + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
-
-const str = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
-
-// 请求体里 camelCase / snake_case 都吃，AI 和人手写都不容易踩空
-const pick = (b, ...keys) => {
-  for (const k of keys) if (b[k] !== undefined) return b[k];
-  return undefined;
-};
-const has = (b, ...keys) => keys.some((k) => b[k] !== undefined);
-
-function intOrNull(v) {
-  if (v === null || v === undefined || v === "") return null;
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-// year 缺省值。Worker 跑在 UTC，跨年那几个小时会给出上一年——配 TIMEZONE 就对了
-function currentYear(env) {
-  const tz = env.TIMEZONE || "UTC";
-  try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric" }).format(new Date());
-  } catch {
-    return String(new Date().getUTCFullYear());
-  }
-}
-
-// 'kv:<key>' → 可访问 URL；其它（完整 URL / 相对路径）原样透传；空 → null
-function mediaUrl(env, ref) {
-  const v = str(ref);
-  if (!v) return null;
-  if (!v.startsWith("kv:")) return v;
-  const key = v.slice(3);
-  const base = env.PUBLIC_BASE ? String(env.PUBLIC_BASE).replace(/\/+$/, "") : "";
-  return base + (key.startsWith("ja_") ? "/api/journeys/audio/" : "/api/journeys/photo/") + key;
-}
-
-const kvKeyOf = (ref) => {
-  const v = str(ref);
-  return v.startsWith("kv:") ? v.slice(3) : null;
-};
-
-// 删 journey / stop 时顺手回收 KV 里的媒体，但只在没人再引用它的时候删。
-// （不做这件事的话，每删一趟就漏一批对象，永久堆在 KV 里。）
-async function releaseAsset(env, ref) {
-  const key = kvKeyOf(ref);
-  if (!key) return;
-  const used = await env.DB.prepare(
-    `SELECT 1 AS x FROM journeys      WHERE cover = ? OR song_url = ?
-     UNION ALL
-     SELECT 1 AS x FROM journey_stops WHERE src = ?
-     LIMIT 1`
-  ).bind(ref, ref, ref).first();
-  if (!used) await env.FILES.delete(key).catch(() => {});
-}
-
-// ───────────────────────── 行 → 响应对象 ─────────────────────────
-
-function songOf(env, row) {
-  // 判空看 url 或 title：只填了歌名没音频也算数（纯展示，播放器显示但不出声）
-  if (!row.song_url && !row.song_title) return null;
-  return {
-    url: mediaUrl(env, row.song_url),
-    title: row.song_title || "",
-    artist: row.song_artist || "",
-    cover: mediaUrl(env, row.song_cover),
-    dur: row.song_dur || DEFAULT_DUR,
-    hue: row.song_hue == null ? DEFAULT_HUE : row.song_hue,
-  };
-}
-
-function stopOf(env, row) {
-  return {
-    id: row.id,
-    journeyId: row.journey_id,
-    place: row.place,
-    placeEn: row.place_en || "",
-    date: row.date || "",
-    src: mediaUrl(env, row.src),     // 空 → null
-    note: row.note || "",
-    position: row.position,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function journeyOf(env, row, stops) {
-  const audio = songOf(env, row);
-  return {
-    id: row.id,
-    title: row.title,
-    titleEn: row.title_en || "",
-    year: row.year || "",
-    cover: mediaUrl(env, row.cover),  // 空 → null（跟 stop.src 保持一致）
-    // 卡片底下那行小字：原样存原样返回，不校验也不生成。
-    // 空串就交给前端回落到它自己的兜底文案（前端写 `journey.hint || CONFIG.cardHint`）。
-    hint: row.hint || "",
-    position: row.position,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    audio,        // ← SPEC.md 里的正式字段名
-    song: audio,  // ← 老前端用的别名，指向同一个对象。新代码只认 audio
-    stops: stops || [],
-  };
-}
-
-const J_COLS =
-  "id, title, title_en, year, cover, hint, song_url, song_title, song_artist, song_cover, " +
-  "song_dur, song_hue, position, created_at, updated_at";
-const S_COLS =
-  "id, journey_id, place, place_en, date, src, note, position, created_at, updated_at";
-
-// ───────────────────────── journeys ─────────────────────────
-
-async function listJourneys(request, env, url) {
-  const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "0", 10) || 0, 0), 200);
-  const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10) || 0, 0);
-  const withStops = url.searchParams.get("stops") !== "0";
-
-  let sql = `SELECT ${J_COLS} FROM journeys ORDER BY position ASC, created_at DESC`;
-  const binds = [];
-  if (limit) { sql += " LIMIT ? OFFSET ?"; binds.push(limit, offset); }
-
-  const jRes = await env.DB.prepare(sql).bind(...binds).all();
-  const rows = jRes.results || [];
-  if (!rows.length) return j(env, { journeys: [], total: 0 });
-
-  let byJourney = {};
-  if (withStops) {
-    // 一次把这一页所有 stops 捞出来，在内存里分组。别在循环里查数据库。
-    const ph = rows.map(() => "?").join(",");
-    const sRes = await env.DB.prepare(
-      `SELECT ${S_COLS} FROM journey_stops WHERE journey_id IN (${ph})
-       ORDER BY position ASC, created_at ASC`
-    ).bind(...rows.map((r) => r.id)).all();
-    for (const s of sRes.results || []) (byJourney[s.journey_id] ||= []).push(stopOf(env, s));
-  }
-
-  const total = await env.DB.prepare("SELECT COUNT(*) AS n FROM journeys").first();
-  return j(env, {
-    journeys: rows.map((r) => journeyOf(env, r, byJourney[r.id])),
-    total: total?.n ?? rows.length,
-  });
-}
-
-async function getJourney(env, id) {
-  const row = await env.DB.prepare(`SELECT ${J_COLS} FROM journeys WHERE id = ?`).bind(id).first();
-  if (!row) return fail(env, 404, "NOT_FOUND", "journey 不存在");
-  const sRes = await env.DB.prepare(
-    `SELECT ${S_COLS} FROM journey_stops WHERE journey_id = ? ORDER BY position ASC, created_at ASC`
-  ).bind(id).all();
-  return j(env, { journey: journeyOf(env, row, (sRes.results || []).map((s) => stopOf(env, s))) });
-}
-
-async function createJourney(request, env) {
-  const b = await request.json().catch(() => ({}));
-  const title = str(b.title);
-  if (!title) return fail(env, 400, "TITLE_REQUIRED", "title 不能空");
-
-  const id = newId("j_");
-  const t = Date.now();
-  // 新的一趟排最前：position 一路往负数走
-  const minR = await env.DB.prepare("SELECT MIN(position) AS p FROM journeys").first();
-  const position = (minR?.p ?? 0) - 1;
-
-  await env.DB.prepare(
-    `INSERT INTO journeys
-     (id, title, title_en, year, cover, song_url, song_title, song_artist, song_cover,
-      song_dur, song_hue, position, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).bind(
-    id, title,
-    str(pick(b, "titleEn", "title_en")),
-    str(pick(b, "year")) || currentYear(env),
-    str(pick(b, "cover")),
-    str(pick(b, "audioUrl", "audio_url", "songUrl", "song_url")) || null,
-    str(pick(b, "audioTitle", "audio_title", "songTitle", "song_title")) || null,
-    str(pick(b, "audioArtist", "audio_artist", "songArtist", "song_artist")) || null,
-    str(pick(b, "audioCover", "audio_cover", "songCover", "song_cover")) || null,
-    intOrNull(pick(b, "audioDur", "audio_dur", "songDur", "song_dur")),
-    intOrNull(pick(b, "audioHue", "audio_hue", "songHue", "song_hue")),
-    position, t, t
-  ).run();
-
-  return j(env, { id, ok: true });
-}
-
-async function updateJourney(request, env, id) {
-  const b = await request.json().catch(() => ({}));
-  const set = [], vals = [];
-  const put = (col, v) => { set.push(`${col} = ?`); vals.push(v); };
-
-  if (b.title !== undefined) {
-    const v = str(b.title);
-    if (!v) return fail(env, 400, "TITLE_REQUIRED", "title 不能空");
-    put("title", v);
-  }
-  if (has(b, "titleEn", "title_en")) put("title_en", str(pick(b, "titleEn", "title_en")));
-  if (has(b, "year")) put("year", str(b.year));
-  if (has(b, "cover")) put("cover", str(b.cover));
-  if (has(b, "songUrl", "song_url", "audioUrl", "audio_url"))
-    put("song_url", str(pick(b, "songUrl", "song_url", "audioUrl", "audio_url")) || null);
-  if (has(b, "songTitle", "song_title")) put("song_title", str(pick(b, "songTitle", "song_title")) || null);
-  if (has(b, "songArtist", "song_artist")) put("song_artist", str(pick(b, "songArtist", "song_artist")) || null);
-  if (has(b, "songCover", "song_cover")) put("song_cover", str(pick(b, "songCover", "song_cover")) || null);
-  if (has(b, "songDur", "song_dur")) put("song_dur", intOrNull(pick(b, "songDur", "song_dur")));
-  if (has(b, "songHue", "song_hue")) put("song_hue", intOrNull(pick(b, "songHue", "song_hue")));
-  if (has(b, "position")) put("position", intOrNull(b.position) ?? 0);
-
-  if (!set.length) return fail(env, 400, "NO_FIELDS", "没有可更新的字段");
-  put("updated_at", Date.now());
-  vals.push(id);
-
-  const r = await env.DB.prepare(`UPDATE journeys SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
-  if (!r.meta.changes) return fail(env, 404, "NOT_FOUND", "journey 不存在");
-  return j(env, { ok: true });
-}
-
-async function deleteJourney(env, id) {
-  const row = await env.DB.prepare("SELECT cover, song_url FROM journeys WHERE id = ?").bind(id).first();
-  if (!row) return fail(env, 404, "NOT_FOUND", "journey 不存在");
-
-  // 先把要回收的媒体引用记下来，删完行再去清 KV（清之前还会查一次有没有别人在用）
-  const sRes = await env.DB.prepare("SELECT src FROM journey_stops WHERE journey_id = ?").bind(id).all();
-  const refs = [row.cover, row.song_url, ...(sRes.results || []).map((s) => s.src)];
-
-  // batch 是一个事务：两条要么都成功要么都不动，不会出现"stops 删了 journey 还在"
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM journey_stops WHERE journey_id = ?").bind(id),
-    env.DB.prepare("DELETE FROM journeys WHERE id = ?").bind(id),
-  ]);
-  for (const ref of refs) await releaseAsset(env, ref);
-
-  return j(env, { ok: true });
-}
-
-// 重排整个列表：body { order: ["j_a", "j_b", …] }，按给的顺序写 0,1,2…
-// 之后新建的一趟仍然是 MIN(position)-1 = -1，照样排最前，不冲突。
-async function reorderJourneys(request, env) {
-  const b = await request.json().catch(() => ({}));
-  const order = Array.isArray(b.order) ? b.order : null;
-  if (!order || !order.length) return fail(env, 400, "BAD_BODY", "order 必须是 id 数组");
-  if (order.some((x) => typeof x !== "string" || !ID_RE.test(x)))
-    return fail(env, 400, "BAD_ID", "order 里有非法 id");
-
-  const t = Date.now();
-  await env.DB.batch(order.map((id, i) =>
-    env.DB.prepare("UPDATE journeys SET position = ?, updated_at = ? WHERE id = ?").bind(i, t, id)
-  ));
-  return j(env, { ok: true, count: order.length });
-}
-
-// ───────────────────────── stops ─────────────────────────
-
-async function listStops(env, journeyId) {
-  const jj = await env.DB.prepare("SELECT id FROM journeys WHERE id = ?").bind(journeyId).first();
-  if (!jj) return fail(env, 404, "NOT_FOUND", "journey 不存在");
-  const sRes = await env.DB.prepare(
-    `SELECT ${S_COLS} FROM journey_stops WHERE journey_id = ? ORDER BY position ASC, created_at ASC`
-  ).bind(journeyId).all();
-  return j(env, { stops: (sRes.results || []).map((s) => stopOf(env, s)) });
-}
-
-async function getStop(env, id) {
-  const row = await env.DB.prepare(`SELECT ${S_COLS} FROM journey_stops WHERE id = ?`).bind(id).first();
-  if (!row) return fail(env, 404, "NOT_FOUND", "stop 不存在");
-  return j(env, { stop: stopOf(env, row) });
-}
-
-async function createStop(request, env, journeyId) {
-  const jj = await env.DB.prepare("SELECT id, cover FROM journeys WHERE id = ?").bind(journeyId).first();
-  if (!jj) return fail(env, 404, "NOT_FOUND", "journey 不存在");
-
-  const b = await request.json().catch(() => ({}));
-  const place = str(b.place);
-  if (!place) return fail(env, 400, "PLACE_REQUIRED", "place 不能空");
-  const src = str(b.src);
-
-  const maxR = await env.DB.prepare(
-    "SELECT MAX(position) AS p FROM journey_stops WHERE journey_id = ?"
-  ).bind(journeyId).first();
-  const position = (maxR?.p ?? -1) + 1;   // 停留是往后追加：0,1,2…
-
-  const id = newId("s_");
-  const t = Date.now();
-  await env.DB.prepare(
-    `INSERT INTO journey_stops
-     (id, journey_id, place, place_en, date, src, note, position, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
-  ).bind(
-    id, journeyId, place,
-    str(pick(b, "placeEn", "place_en")),
-    str(pick(b, "date")),
-    src,
-    str(pick(b, "note")),
-    position, t, t
-  ).run();
-
-  // 第一张照片自动当封面（cover 空的时候才填），不然卡片永远没图
-  if (src && !jj.cover) {
-    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
-      .bind(src, t, journeyId).run();
-  } else {
-    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, journeyId).run();
-  }
-
-  return j(env, { id, ok: true });
-}
-
-async function updateStop(request, env, id) {
-  const cur = await env.DB.prepare("SELECT journey_id, src FROM journey_stops WHERE id = ?").bind(id).first();
-  if (!cur) return fail(env, 404, "NOT_FOUND", "stop 不存在");
-
-  const b = await request.json().catch(() => ({}));
-  const set = [], vals = [];
-  const put = (col, v) => { set.push(`${col} = ?`); vals.push(v); };
-
-  if (b.place !== undefined) {
-    const v = str(b.place);
-    if (!v) return fail(env, 400, "PLACE_REQUIRED", "place 不能空");
-    put("place", v);
-  }
-  if (has(b, "placeEn", "place_en")) put("place_en", str(pick(b, "placeEn", "place_en")));
-  if (has(b, "date")) put("date", str(b.date));
-  if (has(b, "src")) put("src", str(b.src));
-  if (has(b, "note")) put("note", str(b.note));
-  if (has(b, "position")) put("position", intOrNull(b.position) ?? 0);
-
-  if (!set.length) return fail(env, 400, "NO_FIELDS", "没有可更新的字段");
-  const t = Date.now();
-  put("updated_at", t);
-  vals.push(id);
-
-  await env.DB.prepare(`UPDATE journey_stops SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
-
-  // 跟 createStop 保持对称：换了照片也要管封面，改了停留也要刷父级 updated_at
-  const newSrc = has(b, "src") ? str(b.src) : cur.src;
-  const parent = await env.DB.prepare("SELECT cover FROM journeys WHERE id = ?").bind(cur.journey_id).first();
-  if (parent && (!parent.cover || parent.cover === cur.src) && newSrc !== cur.src) {
-    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
-      .bind(newSrc, t, cur.journey_id).run();
-    if (cur.src && cur.src !== newSrc) await releaseAsset(env, cur.src);
-  } else {
-    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, cur.journey_id).run();
-    if (has(b, "src") && cur.src && cur.src !== newSrc) await releaseAsset(env, cur.src);
-  }
-
-  return j(env, { ok: true });
-}
-
-async function deleteStop(env, id) {
-  const cur = await env.DB.prepare("SELECT journey_id, src FROM journey_stops WHERE id = ?").bind(id).first();
-  if (!cur) return fail(env, 404, "NOT_FOUND", "stop 不存在");
-
-  await env.DB.prepare("DELETE FROM journey_stops WHERE id = ?").bind(id).run();
-
-  const t = Date.now();
-  const parent = await env.DB.prepare("SELECT cover FROM journeys WHERE id = ?").bind(cur.journey_id).first();
-  if (parent && cur.src && parent.cover === cur.src) {
-    // 封面正好是被删掉那张 → 顺位补上第一张还在的照片
-    const nextSrc = await env.DB.prepare(
-      "SELECT src FROM journey_stops WHERE journey_id = ? AND src != '' ORDER BY position ASC LIMIT 1"
-    ).bind(cur.journey_id).first();
-    await env.DB.prepare("UPDATE journeys SET cover = ?, updated_at = ? WHERE id = ?")
-      .bind(nextSrc?.src || "", t, cur.journey_id).run();
-  } else {
-    await env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, cur.journey_id).run();
-  }
-  await releaseAsset(env, cur.src);
-
-  // position 不重排，删中间一处会留下空洞（0,1,3,4）——不影响排序，介意就调 reorder
-  return j(env, { ok: true });
-}
-
-async function reorderStops(request, env, journeyId) {
-  const b = await request.json().catch(() => ({}));
-  const order = Array.isArray(b.order) ? b.order : null;
-  if (!order || !order.length) return fail(env, 400, "BAD_BODY", "order 必须是 stop id 数组");
-  if (order.some((x) => typeof x !== "string" || !ID_RE.test(x)))
-    return fail(env, 400, "BAD_ID", "order 里有非法 id");
-
-  const t = Date.now();
-  const stmts = order.map((sid, i) =>
-    env.DB.prepare("UPDATE journey_stops SET position = ?, updated_at = ? WHERE id = ? AND journey_id = ?")
-      .bind(i, t, sid, journeyId)
-  );
-  stmts.push(env.DB.prepare("UPDATE journeys SET updated_at = ? WHERE id = ?").bind(t, journeyId));
-  await env.DB.batch(stmts);
-  return j(env, { ok: true, count: order.length });
-}
-
-// ───────────────────────── 媒体上传 / 读取 ─────────────────────────
-
-/**
- * 两种传法都收：
- *   A. JSON  { src_data: "<base64>", mime: "image/jpeg" }   ← AI / 脚本方便
- *   B. 裸二进制 body + content-type: image/jpeg             ← 浏览器上传方便，省 CPU
- *
- * base64 那条路要在 Worker 里 atob + 逐字节转数组，是 CPU 密集操作；
- * 免费计划每请求 10ms CPU，大图会超。真要上量就走 B，或者换 R2 预签名直传。
- */
-async function uploadMedia(request, env, kind) {
-  const isPhoto = kind === "photo";
-  const prefix = isPhoto ? "jp_" : "ja_";
-  const maxB64 = isPhoto ? MAX_PHOTO_B64 : MAX_AUDIO_B64;
-  const mimeRe = isPhoto ? PHOTO_MIME : AUDIO_MIME;
-  const ct = (request.headers.get("content-type") || "").toLowerCase();
-
-  let bytes, mime;
-
-  if (ct.includes("application/json")) {
-    const b = await request.json().catch(() => ({}));
-    let data = pick(b, "src_data", "srcData", "audio_data", "audioData", "data");
-    if (typeof data !== "string" || !data) {
-      return fail(env, 400, "BAD_BODY", isPhoto ? "src_data 必须是 base64 字符串" : "audio_data 必须是 base64 字符串");
-    }
-    mime = str(b.mime) || (isPhoto ? "image/jpeg" : "audio/mpeg");
-    // data URL 前缀自己剥掉，别让调用方（尤其是 AI）记这条规矩
-    const m = /^data:([^;,]+);base64,/i.exec(data);
-    if (m) { mime = m[1].toLowerCase(); data = data.slice(m[0].length); }
-    data = data.replace(/\s/g, "");
-    if (data.length > maxB64) {
-      return fail(env, 413, "TOO_LARGE", `文件太大（base64 上限 ${maxB64} 字符），先压一压`);
-    }
-    try {
-      bytes = b64ToBytes(data);
-    } catch {
-      // 原版这里没 try/catch，非法 base64 直接 500。这种事应该是 400。
-      return fail(env, 400, "BAD_BASE64", "base64 解不开");
-    }
-  } else {
-    mime = ct.split(";")[0].trim() || (isPhoto ? "image/jpeg" : "audio/mpeg");
-    const buf = await request.arrayBuffer();
-    if (!buf.byteLength) return fail(env, 400, "BAD_BODY", "body 是空的");
-    if (buf.byteLength > Math.floor(maxB64 * 0.75)) {
-      return fail(env, 413, "TOO_LARGE", "文件太大，先压一压");
-    }
-    bytes = new Uint8Array(buf);
-  }
-
-  if (!mimeRe.test(mime)) return fail(env, 400, "BAD_MIME", `不支持的类型：${mime}`);
-
-  const key = prefix + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
-  // 没设 expirationTtl = 永久保存。回收靠 releaseAsset（删 journey / 换图时）
-  await env.FILES.put(key, bytes, { metadata: { mime, size: bytes.length, uploadedAt: Date.now() } });
-
-  return j(env, {
-    key,
-    // 建议存成 'kv:<key>'，换域名 / 改路径前缀时不用动数据
-    ref: "kv:" + key,
-    url: mediaUrl(env, "kv:" + key),
-    ok: true,
-  });
-}
-
-function b64ToBytes(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-/**
- * 读媒体。默认不鉴权：<img> / <audio> 不会带 Authorization header，
- * 安全模型是"URL 猜不到"（unlisted），**不是访问控制**——拿到链接的人就能看。
- * 介意就设 REQUIRE_MEDIA_TOKEN=1，前端所有 <img src> 后面补 ?token=。
- *
- * 一定要校验 key 前缀。只校验 /^[\w-]+$/ 的话，这个公开端点能读到同一个 KV
- * namespace 里的**任意**对象——包括你放在里面的别的东西。
- */
-async function serveMedia(request, env, key, prefix) {
-  if (!key.startsWith(prefix) || !ID_RE.test(key)) {
-    return new Response(JSON.stringify({ error: "bad key", code: "BAD_KEY" }), {
-      status: 400,
-      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
-    });
-  }
-  if (env.REQUIRE_MEDIA_TOKEN === "1" && !authed(request, env)) {
-    return new Response(JSON.stringify({ error: "unauthorized", code: "UNAUTHORIZED" }), {
-      status: 401,
-      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
-    });
-  }
-
-  const obj = await env.FILES.getWithMetadata(key, { type: "arrayBuffer" });
-  if (!obj || !obj.value) {
-    return new Response(JSON.stringify({ error: "not found", code: "NOT_FOUND" }), {
-      status: 404,
-      headers: { "content-type": "application/json; charset=utf-8", ...corsHeaders(env) },
-    });
-  }
-
-  const mime = obj.metadata?.mime || (prefix === "jp_" ? "image/jpeg" : "audio/mpeg");
-  const total = obj.value.byteLength;
-  const base = {
-    "content-type": mime,
-    // key 是一次性的（改图必换 key），所以可以放心 immutable
-    "cache-control": "public, max-age=31536000, immutable",
-    "accept-ranges": "bytes",
-    ...corsHeaders(env),
-  };
-
-  if (request.method === "HEAD") {
-    return new Response(null, { headers: { ...base, "content-length": String(total) } });
-  }
-
-  // Range：<audio> 拖进度条靠这个。只会 200 全量返回的端点，进度条是拖不动的。
-  const range = request.headers.get("Range");
-  const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
-  if (m && (m[1] || m[2])) {
-    let start, end;
-    if (m[1]) {
-      start = Number(m[1]);
-      end = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1;
-    } else {
-      // "bytes=-500" = 最后 500 字节
-      const suffix = Math.min(Number(m[2]), total);
-      start = total - suffix;
-      end = total - 1;
-    }
-    if (!(start >= 0) || start >= total || end < start) {
-      return new Response(null, {
-        status: 416,
-        headers: { ...base, "content-range": `bytes */${total}` },
-      });
-    }
-    return new Response(obj.value.slice(start, end + 1), {
-      status: 206,
-      headers: {
-        ...base,
-        "content-range": `bytes ${start}-${end}/${total}`,
-        "content-length": String(end - start + 1),
-      },
-    });
-  }
-
-  return new Response(obj.value, { headers: { ...base, "content-length": String(total) } });
-}
-
-// ───────────────────────── 路由 ─────────────────────────
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const p = url.pathname;
-    const m = request.method;
-
-    if (m === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(env) });
-
-    // ① 媒体读取放在鉴权闸门**之前**（img / audio 标签不带 header）
-    let hit;
-    if ((hit = p.match(/^\/api\/journeys\/photo\/([\w-]+)$/)) && (m === "GET" || m === "HEAD"))
-      return serveMedia(request, env, hit[1], "jp_");
-    if ((hit = p.match(/^\/api\/journeys\/audio\/([\w-]+)$/)) && (m === "GET" || m === "HEAD"))
-      return serveMedia(request, env, hit[1], "ja_");
-
-    if (p !== "/api/journeys" && !p.startsWith("/api/journeys/"))
-      return fail(env, 404, "NOT_FOUND", "没有这个接口");
-
-    // ② 闸门。往下全部要 token
-    if (!authed(request, env)) return fail(env, 401, "UNAUTHORIZED", "token 不对");
-
-    try {
-      // 静态路径必须排在 /:id 之前，否则会被当成 journey id 吃掉
-      if (p === "/api/journeys" && m === "GET") return await listJourneys(request, env, url);
-      if (p === "/api/journeys" && m === "POST") return await createJourney(request, env);
-      if (p === "/api/journeys/reorder" && m === "PATCH") return await reorderJourneys(request, env);
-      if (p === "/api/journeys/upload" && m === "POST") return await uploadMedia(request, env, "photo");
-      if (p === "/api/journeys/audio" && m === "POST") return await uploadMedia(request, env, "audio");
-
-      // stops（路径里不带 journey id，跟 SPEC 一致）
-      if ((hit = p.match(/^\/api\/journeys\/stops\/([\w-]+)$/))) {
-        const sid = hit[1];
-        if (!ID_RE.test(sid)) return fail(env, 400, "BAD_ID", "id 形状不对");
-        if (m === "GET") return await getStop(env, sid);
-        if (m === "PATCH") return await updateStop(request, env, sid);
-        if (m === "DELETE") return await deleteStop(env, sid);
-        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
-      }
-
-      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)\/stops$/))) {
-        const jid = hit[1];
-        if (!ID_RE.test(jid) || RESERVED_SEG.has(jid)) return fail(env, 400, "BAD_ID", "id 形状不对");
-        if (m === "GET") return await listStops(env, jid);
-        if (m === "POST") return await createStop(request, env, jid);
-        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
-      }
-
-      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)\/stops\/reorder$/)) && m === "PATCH") {
-        if (!ID_RE.test(hit[1]) || RESERVED_SEG.has(hit[1])) return fail(env, 400, "BAD_ID", "id 形状不对");
-        return await reorderStops(request, env, hit[1]);
-      }
-
-      if ((hit = p.match(/^\/api\/journeys\/([\w-]+)$/))) {
-        const jid = hit[1];
-        if (!ID_RE.test(jid) || RESERVED_SEG.has(jid)) return fail(env, 400, "BAD_ID", "id 形状不对");
-        if (m === "GET") return await getJourney(env, jid);
-        if (m === "PATCH") return await updateJourney(request, env, jid);
-        if (m === "DELETE") return await deleteJourney(env, jid);
-        return fail(env, 405, "METHOD_NOT_ALLOWED", "方法不对");
-      }
-
-      return fail(env, 404, "NOT_FOUND", "没有这个接口");
-    } catch (e) {
-      // D1 / KV 抛出来的都在这里兜住，别把栈吐给客户端
-      console.error("[journeys]", e && e.stack || e);
-      return fail(env, 500, "INTERNAL", "服务端出错了");
-    }
-  },
-};

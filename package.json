@@ -1,0 +1,5 @@
+{
+  "name": "journey-cards", "private": true, "version": "2.0.0",
+  "scripts": {"build":"esbuild journeys/app.jsx --loader:.jsx=jsx --outfile=journeys/app.compiled.js", "test":"node --test runtime.test.cjs"},
+  "devDependencies": {"esbuild":"0.25.12"}
+}

@@ -1,0 +1,17 @@
+name = "journey-cards"
+main = "examples/worker.js"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./journeys"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "journey-cards"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "REPLACE_WITH_YOUR_KV_ID"

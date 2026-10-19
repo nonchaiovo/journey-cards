@@ -10,6 +10,24 @@
 
 为人机恋而做，但设计与后端无关：两张表、一组很小的 REST 接口、一个纯前端的渲染器，就够了。
 
+## 2026-10-19 完整功能与 UI 更新
+
+现在除原来的聊天卡片示例，还包含 **[journeys/index.html](journeys/index.html)**：最新照片画布、完整旅程管理、停留编辑与折叠、照片上传、全屏故事、流式配乐、旁白展开/收起和点地名重播。
+
+```sh
+python3 -m http.server 8080
+# 打开 http://localhost:8080/journeys/
+```
+
+默认演示模式使用本机 localStorage，附带虚构文字与本地 SVG 风景占位图，新增/编辑/删除可直接体验。没有私人旅行照片、聊天记录或服务凭据。完整接入和发布步骤见 **[FULL-UI.md](FULL-UI.md)**。
+
+- `journeys/app.jsx`：可修改的 React 源码；`app.compiled.js`：已编译产物。
+- `journeys/config.js`：演示/真实 API 配置；`runtime.js`：数据适配与演示存储。
+- `examples/worker.js` + `schema.sql` + `wrangler.toml`：沿用原仓库的 D1/KV 后端与完整部署配置。
+- `npm ci && npm run build && npm test`：重建与回归检查。
+
+保留原有许可和聊天卡片示例；完整页面按已有公开契约使用整趟音频直链，不绑定私人曲库或语音账号。TTS 是可选适配接口，未配置时仅播放逐字动画。
+
 ## 里面有什么
 
 - **[INTEGRATE.md](INTEGRATE.md)** —— **接进你自己的前端**：最小数据契约（哪些字段必填、哪些缺了也能跑）、三块 UI 哪块必须哪块可以不要、从参考实现里只需要抄哪几个函数和哪几段 CSS（一张对照表）、样式怎么跟宿主隔离、React / Vue / 原生三段骨架，以及一节「不抄会踩坑」。**大多数人从这份开始看。**
