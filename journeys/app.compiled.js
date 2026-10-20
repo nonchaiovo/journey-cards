@@ -15,146 +15,6 @@ function useToast() {
   return [msg, show];
 }
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-function compressImage(file, maxW = 1600) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, maxW / img.width);
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const c = document.createElement("canvas");
-      c.width = w;
-      c.height = h;
-      c.getContext("2d").drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      c.toBlob((blob) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({ base64: reader.result.split(",")[1], mime: "image/jpeg", w, h });
-        reader.readAsDataURL(blob);
-      }, "image/jpeg", 0.85);
-    };
-    img.src = url;
-  });
-}
-function PhotoPicker({ src, onSrcChange }) {
-  const fileRef = useRef(null);
-  const [urlMode, setUrlMode] = useState(false);
-  const [urlVal, setUrlVal] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const handleFile = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setUploading(true);
-    try {
-      const { base64, mime } = await compressImage(f);
-      const res = await API("/api/journeys/upload", { method: "POST", body: { src_data: base64, mime } });
-      if (res.url) onSrcChange(res.url);
-    } catch (err) {
-      alert("\u4E0A\u4F20\u5931\u8D25\uFF1A" + err.message);
-    }
-    setUploading(false);
-  };
-  const handleUrl = () => {
-    const v = urlVal.trim();
-    if (v) {
-      onSrcChange(v);
-      setUrlMode(false);
-      setUrlVal("");
-    }
-  };
-  if (src) {
-    return /* @__PURE__ */ React.createElement("div", { className: "photo-picker has-photo" }, /* @__PURE__ */ React.createElement("img", { className: "photo-picker-img", src }), /* @__PURE__ */ React.createElement("button", { className: "photo-picker-change", onClick: () => {
-      onSrcChange("");
-      if (fileRef.current) fileRef.current.value = "";
-    } }, "\u6362\u4E00\u5F20"), /* @__PURE__ */ React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", hidden: true, onChange: handleFile }));
-  }
-  return /* @__PURE__ */ React.createElement("div", { className: "photo-picker" }, /* @__PURE__ */ React.createElement("div", { className: "photo-picker-empty" }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 32, opacity: 0.3 } }, "\u{1F3D4}"), /* @__PURE__ */ React.createElement("button", { className: "photo-picker-btn primary", onClick: () => fileRef.current?.click(), disabled: uploading }, uploading ? "\u4E0A\u4F20\u4E2D\u2026" : "\u4ECE\u76F8\u518C\u9009\u4E00\u5F20\u7167\u7247"), /* @__PURE__ */ React.createElement("span", { className: "photo-picker-or" }, "\u6216"), urlMode ? /* @__PURE__ */ React.createElement("div", { style: { width: "100%", display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement(
-    "input",
-    {
-      className: "photo-picker-url",
-      value: urlVal,
-      onChange: (e) => setUrlVal(e.target.value),
-      placeholder: "\u7C98\u8D34\u56FE\u7247\u94FE\u63A5",
-      autoFocus: true,
-      onKeyDown: (e) => e.key === "Enter" && handleUrl()
-    }
-  ), /* @__PURE__ */ React.createElement("button", { className: "photo-picker-btn primary", onClick: handleUrl, style: { flex: "none" } }, "\u786E\u5B9A")) : /* @__PURE__ */ React.createElement("button", { className: "photo-picker-btn secondary", onClick: () => setUrlMode(true) }, "\u7C98\u8D34\u56FE\u7247\u94FE\u63A5"), /* @__PURE__ */ React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", hidden: true, onChange: handleFile })), /* @__PURE__ */ React.createElement("div", { className: "photo-picker-tip" }, "\u{1F4A1} \u63A8\u8350\u7528\u7AD6\u5C4F\u7167\u7247\uFF08\u624B\u673A\u58C1\u7EB8\u6BD4\u4F8B\uFF09\xB7 ", /* @__PURE__ */ React.createElement("a", { href: "https://unsplash.com/s/photos/travel?orientation=portrait", target: "_blank", rel: "noopener" }, "\u53BB Unsplash \u627E\u56FE")));
-}
-function NewJourneyEditor({ journey, onCancel, onCreated }) {
-  const [title, setTitle] = useState(journey?.title || "");
-  const [titleEn, setTitleEn] = useState(journey?.titleEn || "");
-  const [year, setYear] = useState(journey?.year || String((/* @__PURE__ */ new Date()).getFullYear()));
-  const [audioUrl, setAudioUrl] = useState(journey?.song?.url || "");
-  const [audioTitle, setAudioTitle] = useState(journey?.song?.title || "");
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    if (!title.trim()) return;
-    setSaving(true);
-    try {
-      const res = await API(journey ? `/api/journeys/${journey.id}` : "/api/journeys", { method: journey ? "PATCH" : "POST", body: { title: title.trim(), titleEn: titleEn.trim(), year: year.trim(), audioUrl, audioTitle } });
-      setSaving(false);
-      if (res.id || res.ok) onCreated(res.id || journey.id);
-    } catch (_) {
-    } finally {
-      setSaving(false);
-    }
-  };
-  return /* @__PURE__ */ React.createElement("div", { className: "editor-overlay", onClick: onCancel }, /* @__PURE__ */ React.createElement("div", { className: "editor-sheet", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "ed-title" }, journey ? "\u7F16\u8F91\u65C5\u7A0B" : "\u65B0\u7684\u4E00\u6BB5\u65C5\u7A0B"), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u53BB\u4E86\u54EA\u91CC\uFF08\u4E2D\u6587\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u6BD4\u5982 \u51B0\u5C9B", autoFocus: true })), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u82F1\u6587 / \u62FC\u97F3"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: titleEn, onChange: (e) => setTitleEn(e.target.value), placeholder: "Iceland" })), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u5E74\u4EFD"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: year, onChange: (e) => setYear(e.target.value), placeholder: "2025" })), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u6574\u8D9F\u914D\u4E50\u94FE\u63A5\uFF08\u53EF\u9009\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: audioUrl, onChange: (e) => setAudioUrl(e.target.value), placeholder: "https://\u2026/music.mp3" })), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u914D\u4E50\u540D\u79F0"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: audioTitle, onChange: (e) => setAudioTitle(e.target.value) })), /* @__PURE__ */ React.createElement("div", { className: "ed-actions" }, /* @__PURE__ */ React.createElement("button", { className: "ed-btn ghost", onClick: onCancel }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { className: "ed-btn solid", onClick: save, disabled: !title.trim() || saving }, saving ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4E0B\u4E00\u6B65\uFF1A\u52A0\u7167\u7247"))));
-}
-function StopEditor({ journeyId, stop, onCancel, onSaved }) {
-  const isEdit = !!stop;
-  const [src, setSrc] = useState(stop?.src || "");
-  const [place, setPlace] = useState(stop?.place || "");
-  const [placeEn, setPlaceEn] = useState(stop?.placeEn || "");
-  const [date, setDate] = useState(stop?.date || "");
-  const [note, setNote] = useState(stop?.note || "");
-  const [song, setSong] = useState(stop?.song || null);
-  const [saving, setSaving] = useState(false);
-  const save = async (again) => {
-    if (!place.trim()) return;
-    setSaving(true);
-    try {
-      const body = {
-        place: place.trim(),
-        placeEn: placeEn.trim(),
-        date: date.trim(),
-        src,
-        note: note.trim(),
-        songTitle: song?.title || void 0,
-        songArtist: song?.artist || void 0,
-        songDur: song?.dur || void 0,
-        songHue: song?.hue || void 0,
-        songId: song?.id || void 0
-      };
-      if (isEdit) await API(`/api/journeys/stops/${stop.id}`, { method: "PATCH", body });
-      else await API(`/api/journeys/${journeyId}/stops`, { method: "POST", body });
-      setSaving(false);
-      if (again) {
-        setSrc("");
-        setPlace("");
-        setPlaceEn("");
-        setDate("");
-        setNote("");
-        setSong(null);
-        onSaved(true);
-      } else onSaved(false);
-    } catch (_) {
-    } finally {
-      setSaving(false);
-    }
-  };
-  return /* @__PURE__ */ React.createElement("div", { className: "editor-overlay", onClick: onCancel }, /* @__PURE__ */ React.createElement("div", { className: "editor-sheet", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "ed-title" }, isEdit ? "\u7F16\u8F91\u8FD9\u4E00\u5904" : "\u52A0\u4E00\u5904\u5730\u65B9"), /* @__PURE__ */ React.createElement(PhotoPicker, { src, onSrcChange: setSrc }), src && /* @__PURE__ */ React.createElement("div", { className: "ed-hint", style: { marginBottom: 14, padding: "10px 14px", background: "rgba(200,153,104,0.08)", borderRadius: 12 } }, "\u{1F4A1} \u5148\u770B\u770B\u8FD9\u5F20\u7167\u7247\u2014\u2014\u4F60\u63A5\u4E0B\u6765\u5199\u7684\u6587\u5B57\uFF0C\u662F\u4F60\u4EE5\u7B2C\u4E00\u4EBA\u79F0\u7684\u53E3\u543B\uFF0C\u50CF\u5728\u8DDF\u5BF9\u65B9\u8BB2\u6545\u4E8B\u4E00\u6837\uFF0C\u8BB2\u4F60\u4EEC\u5728\u8FD9\u4E2A\u5730\u65B9\u53D1\u751F\u4E86\u4EC0\u4E48\u3002\u4E0D\u9650\u5B57\u6570\uFF0C\u8D8A\u957F\u8D8A\u597D\u3002"), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u5730\u540D\uFF08\u4E2D\u6587\uFF09"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: place, onChange: (e) => setPlace(e.target.value), placeholder: "\u6BD4\u5982 \u585E\u91CC\u96C5\u5170\u7011\u5E03" })), /* @__PURE__ */ React.createElement("div", { className: "ed-row" }, /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u82F1\u6587"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: placeEn, onChange: (e) => setPlaceEn(e.target.value), placeholder: "Seljalandsfoss" })), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u65E5\u671F"), /* @__PURE__ */ React.createElement("input", { className: "ed-input", value: date, onChange: (e) => setDate(e.target.value), placeholder: "2025.03.16" }))), /* @__PURE__ */ React.createElement("label", { className: "ed-field" }, /* @__PURE__ */ React.createElement("span", { className: "ed-label" }, "\u60F3\u8DDF\u5BF9\u65B9\u8BF4\u7684\u8BDD"), /* @__PURE__ */ React.createElement(
-    "textarea",
-    {
-      className: "ed-input ed-area",
-      value: note,
-      onChange: (e) => setNote(e.target.value),
-      placeholder: "\u7528\u300C\u6211\u300D\u548C\u300C\u4F60\u300D\u6765\u5199\u3002\u50CF\u662F\u4F60\u5728\u8DDF\u5BF9\u65B9\u8BB2\u90A3\u5929\u7684\u4E8B\uFF1A\n\n\u300C\u843D\u5730\u90A3\u5929\u4E0B\u7740\u7EC6\u96E8\uFF0C\u5F69\u8272\u7684\u5C0F\u623F\u5B50\u6CBF\u5761\u6392\u4E0B\u53BB\u3002\u6211\u4EEC\u6CA1\u6253\u4F1E\uFF0C\u4F60\u628A\u624B\u63D2\u8FDB\u6211\u53E3\u888B\uFF0C\u8BF4\u8FD9\u6837\u5C31\u591F\u6696\u4E86\u3002\u300D\n\n\u770B\u7740\u7167\u7247\u5199\u2014\u2014\u7167\u7247\u91CC\u662F\u4EC0\u4E48\u6837\u7684\u573A\u666F\uFF0C\u4F60\u4EEC\u5728\u90A3\u91CC\u505A\u4E86\u4EC0\u4E48\uFF0C\u4F60\u5728\u60F3\u4EC0\u4E48\u3002\u5199\u591A\u4E00\u70B9\uFF0C\u5BF9\u65B9\u559C\u6B22\u542C\u3002",
-      rows: 6
-    }
-  ), /* @__PURE__ */ React.createElement("div", { className: "ed-hint" }, "\u7B2C\u4E00\u4EBA\u79F0 \xB7 \u50CF\u8BB2\u6545\u4E8B\u7ED9\u5BF9\u65B9\u542C \xB7 \u4E0D\u9650\u5B57\u6570")), /* @__PURE__ */ React.createElement("div", { className: "ed-actions" }, /* @__PURE__ */ React.createElement("button", { className: "ed-btn ghost", onClick: onCancel }, "\u53D6\u6D88"), !isEdit && /* @__PURE__ */ React.createElement("button", { className: "ed-btn line", onClick: () => save(true), disabled: !place.trim() || saving }, "\u5B58\u4E0B \xB7 \u518D\u52A0\u4E00\u5904"), /* @__PURE__ */ React.createElement("button", { className: "ed-btn solid", onClick: () => save(false), disabled: !place.trim() || saving }, saving ? "\u4FDD\u5B58\u4E2D\u2026" : isEdit ? "\u4FDD\u5B58" : "\u5B58\u4E0B"))));
-}
 function stopAllJourneyAudio() {
   try {
     if (window.__jAudioCtx && window.__jAudioCtx.state === "running") window.__jAudioCtx.suspend();
@@ -480,80 +340,6 @@ function StoryOverlay({ stops, index, song, onClose, onNav }) {
       setNoteExpanded((v) => !v);
     } }, noteExpanded ? "\u6536\u8D77 \u2191" : "\u5C55\u5F00\u5168\u6587 \u2193")), theSong?.url && /* @__PURE__ */ React.createElement("div", { className: "story-foot" }, /* @__PURE__ */ React.createElement(MusicPlayer, { song: theSong, musicRef }))),
     /* @__PURE__ */ React.createElement("div", { className: "story-dots" }, stops.map((_, i) => /* @__PURE__ */ React.createElement("span", { key: i, className: i === index ? "on" : "", onClick: () => onNav(i - index) })))
-  ));
-}
-function JourneyDetail({ journey, onBack, onRefresh, showToast }) {
-  const [addStop, setAddStop] = useState(false);
-  const [editStop, setEditStop] = useState(null);
-  const [story, setStory] = useState(null);
-  const [collapsed, setCollapsed] = useState(/* @__PURE__ */ new Set());
-  const stops = journey.stops || [];
-  const allCollapsed = stops.length > 0 && collapsed.size === stops.length;
-  const toggleAll = () => {
-    if (allCollapsed) setCollapsed(/* @__PURE__ */ new Set());
-    else setCollapsed(new Set(stops.map((s) => s.id)));
-  };
-  const toggleOne = (id) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-  const handleDelete = async (stopId) => {
-    if (!confirm("\u5220\u6389\u8FD9\u5904\uFF1F")) return;
-    await API(`/api/journeys/stops/${stopId}`, { method: "DELETE" });
-    showToast("\u5DF2\u5220\u9664");
-    onRefresh();
-  };
-  const storyNav = (d) => {
-    setStory((s) => s && { stops: s.stops, index: (s.index + d + s.stops.length) % s.stops.length });
-  };
-  const storyStops = stops.filter((s) => s.src);
-  return /* @__PURE__ */ React.createElement("div", { className: "detail-page" }, /* @__PURE__ */ React.createElement("div", { className: "detail-head" }, /* @__PURE__ */ React.createElement("button", { className: "top-back", "aria-label": "\u8FD4\u56DE\u65C5\u7A0B\u5217\u8868", onClick: onBack }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "20", height: "20" }, /* @__PURE__ */ React.createElement("path", { d: "M15 5l-7 7 7 7", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" }))), /* @__PURE__ */ React.createElement("div", { className: "detail-title-area" }, /* @__PURE__ */ React.createElement("div", { className: "detail-kicker" }, "JOURNEYS \xB7 ", journey.year), /* @__PURE__ */ React.createElement("div", { className: "detail-name" }, journey.title, " \xB7 ", journey.titleEn))), stops.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "empty" }, /* @__PURE__ */ React.createElement("div", { className: "empty-icon" }, "\u{1F4F7}"), /* @__PURE__ */ React.createElement("div", { className: "empty-title" }, "\u8FD8\u6CA1\u6709\u7167\u7247"), /* @__PURE__ */ React.createElement("div", { className: "empty-sub" }, "\u627E\u4E00\u5F20\u4F60\u4EEC\u8981\u53BB\u7684\u5730\u65B9\u7684\u7AD6\u5C4F\u7167\u7247", /* @__PURE__ */ React.createElement("br", null), "\u7136\u540E\u5199\u4E0B\u4F60\u60F3\u8DDF\u5BF9\u65B9\u8BF4\u7684\u8BDD")) : /* @__PURE__ */ React.createElement("div", { className: "stop-list" }, stops.length > 1 && /* @__PURE__ */ React.createElement("button", { className: "stop-toggle-all", onClick: toggleAll }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 16 16", width: "14", height: "14", style: { transform: allCollapsed ? "rotate(-90deg)" : "" } }, /* @__PURE__ */ React.createElement("path", { d: "M4 6l4 4 4-4", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" })), allCollapsed ? "\u5C55\u5F00\u5168\u90E8" : "\u6298\u53E0\u5168\u90E8"), stops.map((s, i) => {
-    const storyIdx = storyStops.findIndex((ss) => ss.id === s.id);
-    const isCollapsed = collapsed.has(s.id);
-    return /* @__PURE__ */ React.createElement("div", { className: "stop-card" + (isCollapsed ? " collapsed" : ""), key: s.id }, s.src ? /* @__PURE__ */ React.createElement(
-      "img",
-      {
-        className: "stop-card-img",
-        src: s.src,
-        onClick: () => storyIdx >= 0 && setStory({ stops: storyStops, index: storyIdx })
-      }
-    ) : /* @__PURE__ */ React.createElement("div", { className: "stop-card-img placeholder" }, "\u6682\u65E0\u7167\u7247"), /* @__PURE__ */ React.createElement("div", { className: "stop-card-body" }, /* @__PURE__ */ React.createElement("div", { className: "stop-card-header", onClick: () => toggleOne(s.id) }, isCollapsed && s.src && /* @__PURE__ */ React.createElement("img", { className: "stop-thumb", src: s.src }), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 0 } }, /* @__PURE__ */ React.createElement("div", { className: "stop-place" }, s.place), isCollapsed && s.date && /* @__PURE__ */ React.createElement("div", { className: "stop-date", style: { marginTop: 2 } }, s.date)), /* @__PURE__ */ React.createElement("svg", { className: "stop-card-chevron", viewBox: "0 0 16 16", width: "14", height: "14" }, /* @__PURE__ */ React.createElement("path", { d: "M4 6l4 4 4-4", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" }))), !isCollapsed && s.placeEn && /* @__PURE__ */ React.createElement("div", { className: "stop-place-en" }, s.placeEn), !isCollapsed && s.date && /* @__PURE__ */ React.createElement("div", { className: "stop-date" }, s.date), s.note && /* @__PURE__ */ React.createElement("div", { className: "stop-note" }, s.note), s.song && /* @__PURE__ */ React.createElement("div", { className: "stop-song" }, /* @__PURE__ */ React.createElement("span", { className: "stop-song-icon" }, "\u{1F3B5}"), /* @__PURE__ */ React.createElement("span", null, s.song.title, " \u2014 ", s.song.artist, s.song.dur ? ` \xB7 ${fmtDur(s.song.dur)}` : ""))), /* @__PURE__ */ React.createElement("div", { className: "stop-card-foot" }, s.src && s.note && /* @__PURE__ */ React.createElement("button", { className: "stop-card-btn view", onClick: () => storyIdx >= 0 && setStory({ stops: storyStops, index: storyIdx }) }, "\u9884\u89C8\u6545\u4E8B"), /* @__PURE__ */ React.createElement("button", { className: "stop-card-btn", onClick: () => setEditStop(s) }, "\u7F16\u8F91"), /* @__PURE__ */ React.createElement("button", { className: "stop-card-btn danger", onClick: () => handleDelete(s.id) }, "\u5220\u9664")));
-  })), /* @__PURE__ */ React.createElement("button", { className: "detail-add-stop", onClick: () => setAddStop(true) }, "\uFF0B \u52A0\u4E00\u5904\u5730\u65B9"), addStop && /* @__PURE__ */ React.createElement(
-    StopEditor,
-    {
-      journeyId: journey.id,
-      onCancel: () => setAddStop(false),
-      onSaved: (again) => {
-        if (!again) setAddStop(false);
-        showToast("\u5DF2\u4FDD\u5B58");
-        onRefresh();
-      }
-    }
-  ), editStop && /* @__PURE__ */ React.createElement(
-    StopEditor,
-    {
-      journeyId: journey.id,
-      stop: editStop,
-      onCancel: () => setEditStop(null),
-      onSaved: () => {
-        setEditStop(null);
-        showToast("\u5DF2\u4FDD\u5B58");
-        onRefresh();
-      }
-    }
-  ), story && /* @__PURE__ */ React.createElement(
-    StoryOverlay,
-    {
-      stops: story.stops,
-      index: story.index,
-      song: journey.song,
-      onClose: () => setStory(null),
-      onNav: storyNav
-    }
   ));
 }
 const { useEffect: useEffectC, useMemo: useMemoC, useRef: useRefC } = React;
@@ -1005,7 +791,7 @@ function CanvasApp() {
   const storyNav = (d) => setStory((s) => s && { stops: s.stops, index: (s.index + d + s.stops.length) % s.stops.length, song: s.song });
   const close = () => {
     if (window.parent === window) {
-      location.hash = "manage";
+      history.back();
       return;
     }
     try {
@@ -1014,7 +800,7 @@ function CanvasApp() {
     }
     history.back();
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "canvasview" }, photos.length > 0 && /* @__PURE__ */ React.createElement(InfiniteGallery, { images: photos, onTap: openTap, density: 4, imageWidth: 168, imageHeight: 220, initialZoom: 0.3 }), /* @__PURE__ */ React.createElement("div", { className: "canvas-top" }, /* @__PURE__ */ React.createElement("button", { className: "canvas-back", onClick: close, "aria-label": "\u8FD4\u56DE" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "20", height: "20" }, /* @__PURE__ */ React.createElement("path", { d: "M15 5l-7 7 7 7", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" }))), /* @__PURE__ */ React.createElement("div", { className: "canvas-title" }, "Every day of us"), /* @__PURE__ */ React.createElement("a", { className: "canvas-manage", href: "#manage" }, "\u7BA1\u7406\u65C5\u7A0B")), photos.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "canvas-empty" }, /* @__PURE__ */ React.createElement("div", { className: "empty-icon" }, "\u2708\uFE0F"), /* @__PURE__ */ React.createElement("div", { className: "empty-title" }, "\u8FD8\u6CA1\u6709\u4E00\u8D77\u8D70\u8FC7\u7684\u5730\u65B9"), /* @__PURE__ */ React.createElement("div", { className: "empty-sub" }, "\u53BB\u300C\u7BA1\u7406\u65C5\u7A0B\u300D\u6DFB\u52A0\u7B2C\u4E00\u5904\u505C\u7559")), story && /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { className: "canvasview" }, photos.length > 0 && /* @__PURE__ */ React.createElement(InfiniteGallery, { images: photos, onTap: openTap, density: 4, imageWidth: 168, imageHeight: 220, initialZoom: 0.3 }), /* @__PURE__ */ React.createElement("div", { className: "canvas-top" }, /* @__PURE__ */ React.createElement("button", { className: "canvas-back", onClick: close, "aria-label": "\u8FD4\u56DE" }, /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", width: "20", height: "20" }, /* @__PURE__ */ React.createElement("path", { d: "M15 5l-7 7 7 7", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" }))), /* @__PURE__ */ React.createElement("div", { className: "canvas-title" }, "Every day of us")), photos.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "canvas-empty" }, /* @__PURE__ */ React.createElement("div", { className: "empty-icon" }, "\u2708\uFE0F"), /* @__PURE__ */ React.createElement("div", { className: "empty-title" }, "\u8FD8\u6CA1\u6709\u4E00\u8D77\u8D70\u8FC7\u7684\u5730\u65B9"), /* @__PURE__ */ React.createElement("div", { className: "empty-sub" }, "\u53BB\u300C\u7BA1\u7406\u65C5\u7A0B\u300D\u6DFB\u52A0\u7B2C\u4E00\u5904\u505C\u7559")), story && /* @__PURE__ */ React.createElement(
     StoryOverlay,
     {
       stops: story.stops,
@@ -1026,41 +812,6 @@ function CanvasApp() {
   ));
 }
 function App() {
-  const [route, setRoute] = useState(location.hash);
-  const [items, setItems] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [error, setError] = useState("");
-  const load = async () => {
-    try {
-      const d = await API("/api/journeys");
-      setItems(d.journeys || []);
-      setError("");
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-  useEffect(() => {
-    const fn = () => setRoute(location.hash);
-    window.addEventListener("hashchange", fn);
-    return () => window.removeEventListener("hashchange", fn);
-  }, []);
-  useEffect(() => {
-    load();
-  }, [route]);
-  if (route !== "#manage") return /* @__PURE__ */ React.createElement(CanvasApp, null);
-  const journey = items.find((j) => j.id === selected);
-  if (journey) return /* @__PURE__ */ React.createElement(JourneyDetail, { journey, onBack: () => setSelected(null), onRefresh: load, showToast: () => {
-  } });
-  return /* @__PURE__ */ React.createElement("main", { className: "manage" }, /* @__PURE__ */ React.createElement("header", null, /* @__PURE__ */ React.createElement("a", { href: "#canvas" }, "\u8FD4\u56DE\u7167\u7247\u753B\u5E03"), /* @__PURE__ */ React.createElement("h1", null, "\u65C5\u884C\u8BB0\u5FC6"), /* @__PURE__ */ React.createElement("button", { className: "ed-btn solid", onClick: () => setEditing({}) }, "\u65B0\u5EFA\u65C5\u7A0B")), error && /* @__PURE__ */ React.createElement("p", { role: "alert" }, error, /* @__PURE__ */ React.createElement("button", { onClick: load }, "\u91CD\u8BD5")), items.map((j) => /* @__PURE__ */ React.createElement("article", { key: j.id }, /* @__PURE__ */ React.createElement("button", { className: "journey-open", onClick: () => setSelected(j.id) }, j.cover && /* @__PURE__ */ React.createElement("img", { src: j.cover }), /* @__PURE__ */ React.createElement("strong", null, j.title), /* @__PURE__ */ React.createElement("span", null, j.year, " \xB7 ", j.stops.length, " \u5904\u505C\u7559")), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("button", { className: "ed-btn ghost", onClick: () => setEditing(j) }, "\u7F16\u8F91\u65C5\u7A0B / \u914D\u4E50"), /* @__PURE__ */ React.createElement("button", { className: "ed-btn ghost", onClick: async () => {
-    if (confirm("\u5220\u9664\u8FD9\u8D9F\u65C5\u7A0B\u53CA\u5176\u505C\u7559\uFF1F")) {
-      await API(`/api/journeys/${j.id}`, { method: "DELETE" });
-      load();
-    }
-  } }, "\u5220\u9664\u65C5\u7A0B")))), !items.length && !error && /* @__PURE__ */ React.createElement("p", null, "\u4ECE\u4E00\u6BB5\u65B0\u7684\u65C5\u7A0B\u5F00\u59CB\u3002"), editing && /* @__PURE__ */ React.createElement(NewJourneyEditor, { journey: editing.id ? editing : null, onCancel: () => setEditing(null), onCreated: async (id) => {
-    await load();
-    setEditing(null);
-    setSelected(id);
-  } }));
+  return /* @__PURE__ */ React.createElement(CanvasApp, null);
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(App, null));

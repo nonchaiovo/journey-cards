@@ -12,14 +12,14 @@
 
 ## 2026-10-19 完整功能与 UI 更新
 
-现在除原来的聊天卡片示例，还包含 **[journeys/index.html](journeys/index.html)**：最新照片画布、完整旅程管理、停留编辑与折叠、照片上传、全屏故事、流式配乐、旁白展开/收起和点地名重播。
+现在除原来的聊天卡片示例，还包含 **[journeys/index.html](journeys/index.html)**：照片画布、全屏故事、流式配乐、旁白展开/收起和点地名重播。和 NEST 实际前端一致：页面里没有新建/编辑/删除旅程的界面，旅程和停留由 AI 通过接口写入。
 
 ```sh
 python3 -m http.server 8080
 # 打开 http://localhost:8080/journeys/
 ```
 
-默认演示模式使用本机 localStorage，附带虚构文字与本地 SVG 风景占位图，新增/编辑/删除可直接体验。没有私人旅行照片、聊天记录或服务凭据。完整接入和发布步骤见 **[FULL-UI.md](FULL-UI.md)**。
+默认演示模式使用本机 localStorage，附带虚构文字与本地 SVG 风景占位图。没有私人旅行照片、聊天记录或服务凭据。完整接入和发布步骤见 **[FULL-UI.md](FULL-UI.md)**。
 
 - `journeys/app.jsx`：可修改的 React 源码；`app.compiled.js`：已编译产物。
 - `journeys/config.js`：演示/真实 API 配置；`runtime.js`：数据适配与演示存储。
