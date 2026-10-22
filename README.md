@@ -1,5 +1,7 @@
 # Journey Cards
 
+**[在线试玩 →](https://chai-and-non.pages.dev/#journeys)** Chai & Non 官网上的实机演示
+
 **把"AI 带你去一个地方"这件事，接进你自己的前端。**
 
 这个仓库不是 npm 包，也不是组件库——它是一份数据契约加一份可以照抄的参考实现。你的存储能存下一段 JSON，你的前端就能把它渲染成一趟点得开的旅行；React、Vue、原生都行。
